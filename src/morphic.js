@@ -12342,6 +12342,7 @@ WorldMorph.prototype.initKeyboardHandler = function () {
     }
     kbd = document.createElement('textarea');
     kbd.setAttribute('id', 'morphic_keyboard');
+    kbd.setAttribute('aria-label', 'Snap! keyboard input');
     kbd.setAttribute('style', 'caret-color:transparent;');
     kbd.style.position = 'absolute';
     kbd.style.overflow = "hidden";

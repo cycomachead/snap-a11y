@@ -41,6 +41,7 @@ npm run report                    # open the HTML report
 | File | Status | Purpose |
 |---|---|---|
 | `specs/00-smoke.spec.js` | passing | harness sanity: Snap! boots, world introspectable |
+| `specs/05-fixtures.spec.js` | passing | `tests.html` launcher is accessible; the three `fixtures/` projects open via `#open:` |
 | `specs/10-document.spec.js` | passing | host-page semantics (lang, title, named keyboard textarea) |
 | `specs/20-landmarks.spec.js` | `fixme` | Phase 1 spec: overlay root, landmarks, live regions |
 | `specs/30-labels.spec.js` | `fixme` | Phases 1/3 spec: accessible names, speakable block labels |

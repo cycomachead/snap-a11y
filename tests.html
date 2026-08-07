@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Snap! Accessibility Test Launcher</title>
+    <style>
+        :root {
+            color-scheme: light dark;
+        }
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            max-width: 42rem;
+            margin: 2rem auto;
+            padding: 0 1rem;
+            line-height: 1.5;
+        }
+        ul.projects {
+            list-style: none;
+            padding: 0;
+        }
+        ul.projects li {
+            margin: 0.75rem 0;
+        }
+        ul.projects a {
+            display: block;
+            padding: 1rem;
+            border: 2px solid #4a90d9;
+            border-radius: 0.5rem;
+            text-decoration: none;
+            color: inherit;
+        }
+        ul.projects a:hover {
+            background: rgba(74, 144, 217, 0.15);
+        }
+        ul.projects a:focus-visible {
+            outline: 3px solid #4a90d9;
+            outline-offset: 2px;
+        }
+        ul.projects a strong {
+            display: block;
+            font-size: 1.1rem;
+        }
+        footer {
+            margin-top: 2rem;
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+<body>
+    <main>
+        <h1>Snap<em>!</em> Accessibility Test Launcher</h1>
+        <p>
+            Pick a project to open it in the Snap<em>!</em> editor, or start
+            with an empty project. These fixtures are also used by the
+            automated tests in <code>tests/</code>.
+        </p>
+        <ul class="projects">
+            <li>
+                <a href="snap.html">
+                    <strong>New project</strong>
+                    Open the editor with an empty project.
+                </a>
+            </li>
+            <li>
+                <a href="snap.html#open:tests/fixtures/Snap_v11_Map_Colors.xml">
+                    <strong>Snap! v11 Map Colors</strong>
+                    Small project: color reporters, map, and watchers
+                    (2 sprites, 24&nbsp;KB).
+                </a>
+            </li>
+            <li>
+                <a href="snap.html#open:tests/fixtures/manual_cover_scripts.xml">
+                    <strong>manual cover scripts</strong>
+                    Medium project: the Reference Manual cover scripts
+                    (162&nbsp;KB).
+                </a>
+            </li>
+            <li>
+                <a href="snap.html#open:tests/fixtures/CS10_SP22_Final_Main.xml">
+                    <strong>CS10 SP22 Final Main</strong>
+                    Large project: a CS10 final with many sprites, custom
+                    blocks, and media (4.2&nbsp;MB) — useful for performance
+                    checks.
+                </a>
+            </li>
+        </ul>
+        <footer>
+            <p>
+                See <a href="docs/ACCESSIBILITY.md">docs/ACCESSIBILITY.md</a>
+                for the accessibility roadmap and
+                <a href="tests/README.md">tests/README.md</a> for running the
+                automated suite.
+            </p>
+        </footer>
+    </main>
+</body>
+</html>

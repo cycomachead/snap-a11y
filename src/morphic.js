@@ -3335,6 +3335,8 @@ Morph.prototype.init = function () {
     this.customContextMenu = null;
     this.lastTime = Date.now();
     this.onNextStep = null; // optional function to be run once
+    this.acceptsFocus = null; // null: auto-detect, true/false: explicit policy
+    this.isFocused = false;
 };
 
 // Morph string representation: e.g. 'a Morph 2 [20@45 | 130@250]'
@@ -3351,6 +3353,10 @@ Morph.prototype.toString = function () {
 // Morph deleting:
 
 Morph.prototype.destroy = function () {
+    var world = this.world();
+    if (world && world.focusedMorph === this) {
+        world.setFocusedMorph(null);
+    }
     if (this.parent !== null) {
         this.fullChanged();
         this.parent.removeChild(this);
@@ -3783,6 +3789,24 @@ Morph.prototype.fullDrawOn = function (aContext, aRect) {
     if (!this.isVisible) {return; }
     this.drawOn(aContext, aRect);
     this.children.forEach(child => child.fullDrawOn(aContext, aRect));
+    if (this.isFocused) {
+        this.drawFocusRing(aContext, aRect);
+    }
+};
+
+Morph.prototype.drawFocusRing = function (ctx, rect) {
+    var ring = this.bounds.expandBy(3).intersect(rect);
+    if (!ring.extent().gt(ZERO)) {return; }
+    ctx.save();
+    ctx.strokeStyle = 'rgba(117, 190, 255, 0.95)';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(
+        ring.left() + 1,
+        ring.top() + 1,
+        Math.max(ring.width() - 2, 1),
+        Math.max(ring.height() - 2, 1)
+    );
+    ctx.restore();
 };
 
 Morph.prototype.hide = function () {
@@ -4759,6 +4783,14 @@ Morph.prototype.previousEntryField = function (current) {
         return fields[fields.length - 1];
     }
     return fields[0];
+};
+
+Morph.prototype.isFocusable = function () {
+    return this.isVisible &&
+        (this.acceptsFocus === true ||
+            (this.acceptsFocus === null &&
+                this.mouseClickLeft &&
+                this.mouseClickLeft !== nop));
 };
 
 Morph.prototype.tab = function (editField) {
@@ -6940,6 +6972,7 @@ SliderButtonMorph.prototype.init = function (orientation) {
     this.is3D = false;
     this.hasMiddleDip = true;
     SliderButtonMorph.uber.init.call(this, orientation);
+    this.acceptsFocus = true;
 };
 
 SliderButtonMorph.prototype.autoOrientation = nop;
@@ -7483,6 +7516,7 @@ MouseSensorMorph.prototype.init = function (edge, border, borderColor) {
     this.isTouched = false;
     this.upStep = 0.05;
     this.downStep = 0.02;
+    this.acceptsFocus = false;
 };
 
 MouseSensorMorph.prototype.touch = function () {
@@ -9259,6 +9293,11 @@ StringMorph.prototype.disableSelecting = function () {
     delete this.mouseMove;
 };
 
+StringMorph.prototype.isFocusable = function () {
+    return this.isVisible &&
+        (this.acceptsFocus || this.isEditable || this.enableLinks);
+};
+
 // TextMorph ////////////////////////////////////////////////////////////////
 
 // I am a multi-line, word-wrapping String, quasi-inheriting from StringMorph
@@ -9692,6 +9731,8 @@ TextMorph.prototype.enableSelecting = StringMorph.prototype.enableSelecting;
 
 TextMorph.prototype.disableSelecting = StringMorph.prototype.disableSelecting;
 
+TextMorph.prototype.isFocusable = StringMorph.prototype.isFocusable;
+
 TextMorph.prototype.selectAllAndEdit = function () {
     this.edit();
     this.selectAll();
@@ -9909,6 +9950,7 @@ TriggerMorph.prototype.init = function (
     TriggerMorph.uber.init.call(this);
 
     // override inherited properites:
+    this.acceptsFocus = true;
     this.color = WHITE;
     this.createLabel();
 };
@@ -10389,6 +10431,9 @@ FrameMorph.prototype.fullDrawOn = function (ctx, aRect) {
     });
     if (shadow) {
         shadow.drawOn(ctx, aRect);
+    }
+    if (this.isFocused) {
+        this.drawFocusRing(ctx, aRect);
     }
 };
 
@@ -11109,6 +11154,7 @@ StringFieldMorph.prototype.init = function (
     StringFieldMorph.uber.init.call(this);
     this.color = WHITE;
     this.isEditable = true;
+    this.acceptsFocus = true;
     this.acceptsDrops = false;
     this.createText();
 };
@@ -11152,6 +11198,10 @@ StringFieldMorph.prototype.mouseClickLeft = function (pos) {
     } else {
         this.escalateEvent('mouseClickLeft', pos);
     }
+};
+
+StringFieldMorph.prototype.isFocusable = function () {
+    return this.isVisible && this.isEditable && this.acceptsFocus;
 };
 
 // BouncerMorph ////////////////////////////////////////////////////////
@@ -11604,6 +11654,9 @@ HandMorph.prototype.processMouseUp = function () {
         }
         if (this.clickTarget && this.clickTarget.allParents().includes(morph)) {
             morph[expectedClick](this.bounds.origin);
+            if (expectedClick === 'mouseClickLeft') {
+                this.world.setFocusedMorph(this.clickTarget || morph);
+            }
             if (this.inputTarget &&
                 !this.inputTarget.bounds.containsPoint(this.bounds.origin) &&
                 this.inputTarget.mouseLeave
@@ -12112,6 +12165,7 @@ WorldMorph.prototype.init = function (aCanvas, fillPage) {
     this.hand = new HandMorph(this);
     this.keyboardHandler = null;
     this.keyboardFocus = null;
+    this.focusedMorph = null;
     this.cursor = null;
     this.lastEditedText = null;
     this.activeMenu = null;
@@ -12377,7 +12431,15 @@ WorldMorph.prototype.initKeyboardHandler = function () {
                         kbd.world.keyboardFocus.processKeyPress) {
                     kbd.world.keyboardFocus.processKeyPress(event);
                 }
+                if (!kbd.world.keyboardFocus) {
+                    kbd.world.focusNextField(event.shiftKey);
+                }
                 event.preventDefault();
+            } else if (!kbd.world.keyboardFocus &&
+                    (event.keyCode === 32 || event.keyCode === 35)) {
+                if (kbd.world.activateFocusedMorph()) {
+                    event.preventDefault();
+                }
             }
             // suppress cmd-d/f/i/p/s override
             if ((event.ctrlKey || event.metaKey) &&
@@ -12606,6 +12668,102 @@ WorldMorph.prototype.beginBulkDrop = nop;
 WorldMorph.prototype.endBulkDrop = nop;
 
 // WorldMorph text field tabbing:
+
+WorldMorph.prototype.focusableMorphAt = function (aMorph) {
+    var morph = aMorph;
+    while (morph && morph !== this && !morph.isFocusable()) {
+        morph = morph.parent;
+    }
+    return morph === this ? null : morph;
+};
+
+WorldMorph.prototype.setFocusedMorph = function (aMorph) {
+    var oldFocus = this.focusedMorph,
+        newFocus = this.focusableMorphAt(aMorph);
+
+    if (oldFocus === newFocus) {
+        return newFocus;
+    }
+    if (oldFocus) {
+        oldFocus.isFocused = false;
+        if (oldFocus.reactToBlur) {
+            oldFocus.reactToBlur();
+        }
+        oldFocus.rerender();
+    }
+    this.focusedMorph = newFocus;
+    if (newFocus) {
+        newFocus.isFocused = true;
+        if (newFocus.reactToFocus) {
+            newFocus.reactToFocus();
+        }
+        newFocus.scrollIntoView();
+        newFocus.rerender();
+    }
+    return this.focusedMorph;
+};
+
+WorldMorph.prototype.allFocusableMorphs = function () {
+    return this.allChildren().filter(each =>
+        each.parent &&
+        each.isFocusable()
+    );
+};
+
+WorldMorph.prototype.nextFocusableMorph = function (current) {
+    var fields = this.allFocusableMorphs(),
+        idx = fields.indexOf(current);
+    if (idx !== -1) {
+        if (fields.length > idx + 1) {
+            return fields[idx + 1];
+        }
+    }
+    return fields[0];
+};
+
+WorldMorph.prototype.previousFocusableMorph = function (current) {
+    var fields = this.allFocusableMorphs(),
+        idx = fields.indexOf(current);
+    if (idx !== -1) {
+        if (idx > 0) {
+            return fields[idx - 1];
+        }
+        return fields[fields.length - 1];
+    }
+    return fields[0];
+};
+
+WorldMorph.prototype.focusNextField = function (backward) {
+    var next = backward ?
+            this.previousFocusableMorph(this.focusedMorph)
+            : this.nextFocusableMorph(this.focusedMorph);
+    if (!next) {
+        return null;
+    }
+    this.setFocusedMorph(next);
+    if (next.isEditable &&
+            (next instanceof StringMorph || next instanceof TextMorph)) {
+        next.selectAll();
+        next.edit();
+    }
+    return next;
+};
+
+WorldMorph.prototype.activateFocusedMorph = function () {
+    var focus = this.focusedMorph;
+    if (!focus || !focus.isFocusable()) {
+        return false;
+    }
+    if (focus.trigger) {
+        focus.trigger();
+        return true;
+    }
+    if (focus.mouseClickLeft) {
+        focus.mouseClickLeft(focus.center());
+        return true;
+    }
+    return false;
+};
 
 WorldMorph.prototype.nextTab = function (editField) {
     var next = this.nextEntryField(editField);
@@ -12967,6 +13125,7 @@ WorldMorph.prototype.edit = function (aStringOrTextMorph) {
         aStringOrTextMorph.escalateEvent('freshTextEdit', aStringOrTextMorph);
     }
     this.lastEditedText = aStringOrTextMorph;
+    this.setFocusedMorph(aStringOrTextMorph);
 };
 
 WorldMorph.prototype.slide = function (aStringOrTextMorph) {

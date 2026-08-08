@@ -1376,7 +1376,7 @@
 
 /*jshint esversion: 11, bitwise: false*/
 
-var morphicVersion = '2026-May-11';
+var morphicVersion = '2026-August-07';
 var modules = {}; // keep track of additional loaded modules
 var useBlurredShadows = true;
 var ZOOM = 1;
@@ -12342,6 +12342,7 @@ WorldMorph.prototype.initKeyboardHandler = function () {
     }
     kbd = document.createElement('textarea');
     kbd.setAttribute('id', 'morphic_keyboard');
+    kbd.setAttribute('aria-label', 'Snap! keyboard input');
     kbd.setAttribute('style', 'caret-color:transparent;');
     kbd.style.position = 'absolute';
     kbd.style.overflow = "hidden";

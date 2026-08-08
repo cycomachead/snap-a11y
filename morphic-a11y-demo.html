@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Morphic Accessibility (AT) Demo</title>
+    <!-- Loads ONLY morphic.js + accessibility.js: Morphic runs standalone, so
+         this validates the Phase-1 accessibility layer in isolation, with no
+         Snap! IDE involved. -->
+    <script src="src/morphic.js?version=2026-05-11"></script>
+    <script src="src/accessibility.js?version=2026-06-29"></script>
+    <style>
+        body { font-family: system-ui, sans-serif; margin: 24px; color: #222; }
+        h1 { font-size: 20px; }
+        #world { border: 2px solid #888; display: block; }
+        .cols { display: flex; gap: 24px; align-items: flex-start; }
+        .panel { flex: 1; }
+        kbd {
+            background: #eee; border: 1px solid #bbb; border-radius: 4px;
+            padding: 1px 5px; font-size: 12px;
+        }
+        #log {
+            background: #111; color: #6f6; padding: 8px; height: 220px;
+            overflow: auto; font-family: ui-monospace, monospace; font-size: 12px;
+            white-space: pre-wrap; border-radius: 4px;
+        }
+        ul { padding-left: 18px; }
+        li { margin: 3px 0; }
+    </style>
+</head>
+<body>
+    <h1>Morphic Accessibility (AT) Demo &mdash; Phase 1 core</h1>
+    <p>
+        Everything inside the bordered canvas is drawn by Morphic. A parallel,
+        invisible DOM tree (see <code>#morphic_a11y_root_*</code> in the
+        inspector) mirrors the accessible morphs for the screen reader.
+    </p>
+    <div class="cols">
+        <canvas id="world" width="760" height="520" tabindex="1"></canvas>
+        <div class="panel">
+            <h2 style="font-size:15px;margin-top:0">Try this</h2>
+            <ul>
+                <li><kbd>Tab</kbd> / <kbd>Shift+Tab</kbd> &mdash; move between
+                    widgets. A 2px blue focus ring appears (keyboard only).</li>
+                <li>Click a button with the <b>mouse</b> &mdash; no ring
+                    (focus-visible semantics).</li>
+                <li><kbd>Enter</kbd> / <kbd>Space</kbd> &mdash; activate the
+                    focused button.</li>
+                <li>Tab to <b>Editable field</b>, press <kbd>Enter</kbd> to edit,
+                    type, then <kbd>Esc</kbd>/<kbd>Enter</kbd>. The ring tracks
+                    the field while editing.</li>
+                <li>Tab to the <b>Combobox</b>, use <kbd>&uarr;</kbd>/<kbd>&darr;</kbd>
+                    &mdash; this drives <code>aria-activedescendant</code>.</li>
+                <li>Tab to <b>Menu &#9662;</b>, <kbd>Enter</kbd> to open, then
+                    <kbd>&uarr;</kbd>/<kbd>&darr;</kbd> to move (announced),
+                    <kbd>&rarr;</kbd> into the submenu, <kbd>Esc</kbd> to close.
+                    Or right-click anywhere for the dev menu.</li>
+                <li>Turn on VoiceOver (<kbd>&#8984;F5</kbd>) or NVDA and explore.</li>
+            </ul>
+            <h2 style="font-size:15px">Event log (two-way sync)</h2>
+            <div id="log" role="log" aria-label="Demo event log"></div>
+        </div>
+    </div>
+
+    <script>
+"use strict";
+
+var world;
+
+function logMsg(msg) {
+    var el = document.getElementById('log');
+    el.textContent += msg + '\n';
+    el.scrollTop = el.scrollHeight;
+}
+
+// ---- a small factory for an accessible "button" morph -------------------
+// (a plain Morph with a custom label render + click/activate handlers, so the
+//  demo depends only on morphic.js, not the widgets.js button classes)
+function makeButton(label, color, action) {
+    var m = new Morph();
+    m.setExtent(new Point(150, 42));
+    m.color = color;
+    m.label = label;
+    m.action = action || function () {};
+
+    m.isAccessible = true;
+    m.ariaRole = 'button';
+    m.ariaTag = 'button';     // a real <button>: Enter/Space/AT fire click
+    m.setAriaLabel(label);
+
+    m.render = function (ctx) {
+        ctx.fillStyle = this.color.toString();
+        ctx.fillRect(0, 0, this.width(), this.height());
+        ctx.fillStyle = 'white';
+        ctx.font = 'bold 15px system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(this.label, this.width() / 2, this.height() / 2);
+    };
+    // real mouse click (via the canvas/hand) and AT/keyboard activation both
+    // funnel to the same action, demonstrating "regardless of who intercepts"
+    m.mouseClickLeft = function () {
+        logMsg('activate (mouse): ' + this.label);
+        this.action();
+    };
+    m.a11yActivate = function () {
+        logMsg('activate (keyboard/AT): ' + this.label);
+        this.action();
+    };
+    m.reactToFocus = function (viaKeyboard) {
+        logMsg('focus: ' + this.label + (viaKeyboard ? ' [ring]' : ''));
+    };
+    return m;
+}
+
+function label(text, x, y, size) {
+    var m = new StringMorph(text, size || 14);
+    m.setPosition(new Point(x, y));
+    return m;
+}
+
+// ---- a button that pops up an accessible context menu -------------------
+function makeMenuButton(x, y) {
+    var btn = makeButton('Menu ▾', new Color(96, 96, 96), null);
+    btn.setExtent(new Point(170, 42));
+    btn.setPosition(new Point(x, y));
+    btn.setAriaLabel('Menu');            // cleaner than "Menu ▾"
+    btn.setAria('aria-haspopup', 'menu'); // tell AT this opens a menu
+    btn.setAria('aria-expanded', 'false');
+
+    btn.openMenu = function () {
+        var menu = new MenuMorph(this, 'Demo menu'),
+            sub = new MenuMorph(this, 'More');
+        menu.addItem('Inspect', function () { logMsg('menu: Inspect'); });
+        menu.addItem('Duplicate', function () { logMsg('menu: Duplicate'); });
+        menu.addLine();
+        sub.addItem('Export', function () { logMsg('menu: Export'); });
+        sub.addItem('Import', function () { logMsg('menu: Import'); });
+        menu.addMenu('More…', sub);  // submenu => aria-haspopup on the item
+        menu.addLine();
+        menu.addItem('Delete', function () { logMsg('menu: Delete'); });
+        this.setAria('aria-expanded', 'true');
+        menu.popup(world, this.bottomLeft()); // popup() moves focus into the menu
+    };
+    btn.mouseClickLeft = function () {
+        logMsg('open menu (mouse)');
+        this.openMenu();
+    };
+    btn.a11yActivate = function () {
+        logMsg('open menu (keyboard/AT)');
+        this.openMenu();
+    };
+    btn.reactToFocus = function (viaKeyboard) {
+        this.setAria('aria-expanded', 'false'); // focus returned => menu closed
+        logMsg('focus: Menu button' + (viaKeyboard ? ' [ring]' : ''));
+    };
+    return btn;
+}
+
+// ---- build the scene ----------------------------------------------------
+function buildDemo(world) {
+    var b1, b2, b3, field, region, rb1, rb2, combo, menuBtn;
+
+    world.add(label('Buttons (roving focus + focus-visible ring):', 20, 16));
+    world.add(label('Menu trigger:', 530, 16));
+
+    b1 = makeButton('Alpha', new Color(33, 150, 243),
+        function () { world.worldCanvas.title = 'Alpha!'; });
+    b1.setPosition(new Point(20, 40));
+    world.add(b1);
+
+    b2 = makeButton('Bravo', new Color(76, 175, 80));
+    b2.setPosition(new Point(185, 40));
+    world.add(b2);
+
+    b3 = makeButton('Charlie', new Color(244, 67, 54));
+    b3.setPosition(new Point(350, 40));
+    world.add(b3);
+
+    // a button that opens an accessible context menu (aria-haspopup)
+    menuBtn = makeMenuButton(530, 40);
+    world.add(menuBtn);
+
+    // editable text field -------------------------------------------------
+    world.add(label('Editable field (text-edit focus reconciliation):',
+        20, 110));
+    field = new StringMorph('edit me', 20, null, true);
+    field.isEditable = true;
+    field.setPosition(new Point(22, 134));
+    field.isAccessible = true;
+    field.ariaRole = 'textbox';
+    field.setAriaLabel('Editable text field');
+    field.a11yActivate = function () {
+        logMsg('edit (keyboard): start editing field');
+        this.edit();
+        this.selectAll();
+    };
+    field.reactToFocus = function (viaKeyboard) {
+        logMsg('focus: editable field' + (viaKeyboard ? ' [ring]' : ''));
+    };
+    world.add(field);
+
+    // a region landmark containing nested buttons -------------------------
+    world.add(label('Region landmark with nested buttons:', 20, 200));
+    region = new Morph();
+    region.setExtent(new Point(360, 90));
+    region.setPosition(new Point(20, 222));
+    region.color = new Color(238, 238, 238);
+    region.isAccessible = true;
+    region.ariaRole = 'region';
+    region.setAriaLabel('Demo region');
+    region.excludeFromTabRing = true; // a landmark, not a tab stop
+    world.add(region);
+
+    rb1 = makeButton('Inside 1', new Color(120, 120, 200));
+    rb1.setExtent(new Point(150, 42));
+    rb1.setPosition(new Point(35, 246));
+    region.add(rb1);
+
+    rb2 = makeButton('Inside 2', new Color(160, 120, 200));
+    rb2.setExtent(new Point(150, 42));
+    rb2.setPosition(new Point(200, 246));
+    region.add(rb2);
+
+    // combobox driving aria-activedescendant ------------------------------
+    world.add(label('Combobox (aria-activedescendant, per ARIA APG):',
+        20, 340));
+    combo = makeCombobox(['Apples', 'Bananas', 'Cherries', 'Dates'],
+        new Point(22, 364));
+    world.add(combo);
+
+    logMsg('demo ready: ' + world.focusableMorphs().length +
+        ' focusable widgets in the tab ring.');
+}
+
+// ---- a minimal combobox using aria-activedescendant ---------------------
+function makeCombobox(items, pos) {
+    var combo = new Morph(),
+        listbox = new Morph(),
+        stamp = (world.stamp || 0),
+        listboxId = 'demo-listbox-' + stamp;
+
+    combo.setExtent(new Point(220, 36));
+    combo.setPosition(pos);
+    combo.color = new Color(255, 255, 255);
+    combo.activeIndex = 0;
+    combo.options = [];
+
+    combo.isAccessible = true;
+    combo.ariaRole = 'combobox';
+    combo.ariaTag = 'div';
+    combo.a11yFocusMode = 'activedescendant';
+    combo.setAriaLabel('Fruit combobox');
+    combo.setAria('aria-haspopup', 'listbox');
+    combo.setAria('aria-expanded', 'true');
+    combo.setAria('aria-controls', listboxId);
+
+    combo.render = function (ctx) {
+        var sel = this.options[this.activeIndex];
+        ctx.fillStyle = this.color.toString();
+        ctx.fillRect(0, 0, this.width(), this.height());
+        ctx.strokeStyle = '#888';
+        ctx.strokeRect(0.5, 0.5, this.width() - 1, this.height() - 1);
+        ctx.fillStyle = '#222';
+        ctx.font = '14px system-ui, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('▾  ' + (sel ? sel.text : ''), 8, this.height() / 2);
+    };
+
+    // the listbox + options live as a nested accessible subtree
+    listbox.setExtent(new Point(220, 24 * items.length));
+    listbox.setPosition(pos.add(new Point(0, 38)));
+    listbox.color = new Color(250, 250, 250);
+    listbox.isAccessible = true;
+    listbox.ariaRole = 'listbox';
+    listbox.a11yId = listboxId;
+    listbox.excludeFromTabRing = true;
+    listbox.render = function (ctx) {
+        ctx.fillStyle = this.color.toString();
+        ctx.fillRect(0, 0, this.width(), this.height());
+        ctx.strokeStyle = '#ccc';
+        ctx.strokeRect(0.5, 0.5, this.width() - 1, this.height() - 1);
+    };
+    combo.add(listbox); // nested under the combobox
+
+    items.forEach(function (text, i) {
+        var opt = new Morph();
+        opt.text = text;
+        opt.setExtent(new Point(216, 22));
+        opt.setPosition(pos.add(new Point(2, 40 + i * 22)));
+        opt.normalColor = new Color(250, 250, 250);
+        opt.activeColor = new Color(190, 215, 255);
+        opt.color = opt.normalColor.copy();
+        opt.isAccessible = true;
+        opt.ariaRole = 'option';
+        opt.a11yId = 'demo-opt-' + stamp + '-' + i;
+        opt.excludeFromTabRing = true;
+        opt.setAriaLabel(text);
+        opt.setAria('aria-selected', i === 0 ? 'true' : 'false');
+        opt.render = function (ctx) {
+            ctx.fillStyle = this.color.toString();
+            ctx.fillRect(0, 0, this.width(), this.height());
+            ctx.fillStyle = '#222';
+            ctx.font = '13px system-ui, sans-serif';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(this.text, 8, this.height() / 2);
+        };
+        combo.options.push(opt);
+        listbox.add(opt); // nested under the listbox
+    });
+
+    function highlight(index) {
+        combo.options.forEach(function (opt, i) {
+            opt.color = (i === index) ? opt.activeColor.copy()
+                : opt.normalColor.copy();
+            opt.setAria('aria-selected', i === index ? 'true' : 'false');
+            opt.rerender();
+        });
+        combo.setAria('aria-activedescendant',
+            combo.options[index].a11yId);
+        combo.rerender();
+    }
+
+    combo.reactToFocus = function (viaKeyboard) {
+        highlight(this.activeIndex);
+        logMsg('focus: combobox' + (viaKeyboard ? ' [ring]' : ''));
+    };
+
+    // arrow keys move the active option (aria-activedescendant), NOT DOM focus
+    combo.a11yHandleKey = function (event) {
+        var n = this.options.length;
+        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+            this.activeIndex =
+                (this.activeIndex + (event.key === 'ArrowDown' ? 1 : -1) + n) % n;
+            highlight(this.activeIndex);
+            logMsg('combobox active: ' + this.options[this.activeIndex].text);
+            return true; // consumed
+        }
+        if (event.key === 'Enter') {
+            logMsg('combobox chose: ' + this.options[this.activeIndex].text);
+            return true;
+        }
+        return false;
+    };
+
+    return combo;
+}
+
+// ---- boot ---------------------------------------------------------------
+window.onload = function () {
+    var canvas = document.getElementById('world');
+    world = new WorldMorph(canvas, false); // fillPage = false: fixed-size canvas
+    world.isDevMode = true;
+    buildDemo(world);
+
+    function loop() {
+        requestAnimationFrame(loop);
+        world.doOneCycle();
+    }
+    requestAnimationFrame(loop);
+};
+    </script>
+</body>
+</html>

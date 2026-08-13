@@ -19,7 +19,21 @@
   a palette block no longer makes the palette jump sideways mid-grab
 * Enter (13) now activates the focused morph alongside space; the
   previous keyCode 35 was the End key
-* bumped morphic.js ?version= in snap.html and morphicVersion
+* fixed the "this.world is not a function" TypeError in the focus
+  cleanup added to Morph.destroy: MenuMorph shadows the world() method
+  with a property, so destroying any menu (e.g. the "loading..."
+  message during snap.html#open:) threw and aborted project loading;
+  destroy now uses root() and also clears focus when a destroyed
+  morph contains the focused morph
+* tab now navigates the IDE: the stage holds the world's keyboardFocus
+  but never consumed tab (its processKeyPress is a nop), so tab did
+  nothing; morphs that really use tab themselves declare handlesTabKey
+  (CursorMorph, ScriptFocusMorph) and everything else lets tab move
+  the world focus with a visible ring; space/enter activate the
+  keyboard-focused morph; dialogs declare trapsFocus so tab cycles
+  inside them while they hold the keyboard focus
+* bumped morphic.js, blocks.js, and widgets.js ?version= in snap.html
+  and morphicVersion
 * audited the v12.0.6 baseline for screen reader / keyboard accessibility;
   findings, remaining tasks, phased plan, and the parallel DOM contract are
   in docs/ACCESSIBILITY.md

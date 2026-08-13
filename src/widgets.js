@@ -1582,6 +1582,7 @@ DialogBoxMorph.uber = Morph.prototype;
 
 // DialogBoxMorph preferences settings:
 
+DialogBoxMorph.prototype.trapsFocus = true; // keep tab navigation inside
 DialogBoxMorph.prototype.fontSize = 12;
 DialogBoxMorph.prototype.titleFontSize = 14;
 DialogBoxMorph.prototype.fontStyle = 'sans-serif';

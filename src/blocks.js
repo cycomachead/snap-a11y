@@ -17378,6 +17378,7 @@ CommentMorph.prototype.stackHeight = function () {
 ScriptFocusMorph.prototype = new BoxMorph();
 ScriptFocusMorph.prototype.constructor = ScriptFocusMorph;
 ScriptFocusMorph.uber = BoxMorph.prototype;
+ScriptFocusMorph.prototype.handlesTabKey = true; // tab navigates the script
 
 // ScriptFocusMorph instance creation:
 

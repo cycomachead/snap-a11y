@@ -3354,8 +3354,13 @@ Morph.prototype.toString = function () {
 // Morph deleting:
 
 Morph.prototype.destroy = function () {
-    var world = this.world();
-    if (world && world.focusedMorph === this) {
+    // note: use root() here rather than world(), because some morphs
+    // (menus, the hand) shadow the world() method with a property
+    var world = this.root();
+    if (world instanceof WorldMorph && world.focusedMorph &&
+        (world.focusedMorph === this ||
+            world.focusedMorph.allParents().includes(this))
+    ) {
         world.setFocusedMorph(null);
     }
     if (this.parent !== null) {
@@ -4803,6 +4808,15 @@ Morph.prototype.supportsKeyboardInput = function () {
     return false;
 };
 
+// as the world's keyboardFocus, do I consume the tab key myself
+// (e.g. a text cursor moving between entry fields)? If not, tab
+// performs world-level focus navigation
+Morph.prototype.handlesTabKey = false;
+
+// as the world's keyboardFocus, do I keep tab navigation among my own
+// submorphs (e.g. a modal dialog)?
+Morph.prototype.trapsFocus = false;
+
 Morph.prototype.tab = function (editField) {
 /*
     the <tab> key was pressed in one of my edit fields.
@@ -5743,6 +5757,7 @@ CursorMorph.uber = BlinkerMorph.prototype;
 // CursorMorph preferences settings:
 
 CursorMorph.prototype.viewPadding = 1;
+CursorMorph.prototype.handlesTabKey = true; // tab moves to the next field
 
 // CursorMorph instance creation:
 
@@ -12453,18 +12468,22 @@ WorldMorph.prototype.initKeyboardHandler = function () {
             // suppress tab override and make sure tab gets
             // received by all browsers
             if (event.keyCode === 9) {
-                if (kbd.world.keyboardFocus &&
-                        kbd.world.keyboardFocus.processKeyPress) {
-                    kbd.world.keyboardFocus.processKeyPress(event);
-                }
-                if (!kbd.world.keyboardFocus) {
+                if (!(kbd.world.keyboardFocus &&
+                        kbd.world.keyboardFocus.handlesTabKey)) {
+                    // morphs that consume tab themselves (text cursors,
+                    // keyboard script editing) already got it in their
+                    // processKeyDown above; everything else lets tab
+                    // navigate the world's focusable morphs
                     kbd.world.focusNextField(event.shiftKey);
                 }
                 event.preventDefault();
-            } else if (!kbd.world.keyboardFocus &&
-                    (event.keyCode === 32 || event.keyCode === 13)) {
-                // space or enter activates the focused morph, mirroring
-                // standard button semantics
+            } else if ((event.keyCode === 32 || event.keyCode === 13) &&
+                    kbd.world.focusedMorph &&
+                    kbd.world.focusedMorph.isFocusVisible &&
+                    !(kbd.world.keyboardFocus &&
+                        kbd.world.keyboardFocus.handlesTabKey)) {
+                // space or enter activates the keyboard-focused morph,
+                // mirroring standard button semantics
                 if (kbd.world.activateFocusedMorph()) {
                     event.preventDefault();
                 }
@@ -12747,7 +12766,13 @@ WorldMorph.prototype.setFocusedMorph = function (aMorph) {
 };
 
 WorldMorph.prototype.allFocusableMorphs = function () {
-    return this.allChildren().filter(each =>
+    // modal morphs holding the keyboard focus (e.g. dialogs) trap tab
+    // navigation among their own submorphs
+    var root = this.keyboardFocus && this.keyboardFocus.trapsFocus &&
+            this.keyboardFocus.world() === this ?
+                this.keyboardFocus
+                : this;
+    return root.allChildren().filter(each =>
         each.parent &&
         each.isFocusable()
     );

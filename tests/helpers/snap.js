@@ -12,14 +12,15 @@
  */
 async function loadSnap(page) {
     await page.goto('/snap.html');
+    // note: the IDE is not necessarily world.children[0] - the accessibility
+    // layer adds its focus-ring morph to the world before the IDE opens
     await page.waitForFunction(() => {
-        return typeof world !== 'undefined' &&
-            world !== null &&
-            world.children.length > 0 &&
-            world.children[0] instanceof IDE_Morph &&
-            world.children[0].currentSprite &&
-            world.children[0].palette &&
-            world.children[0].palette.contents.children.length > 0;
+        const ide = typeof world !== 'undefined' && world !== null &&
+            world.children.find(m => m instanceof IDE_Morph);
+        return ide &&
+            ide.currentSprite &&
+            ide.palette &&
+            ide.palette.contents.children.length > 0;
     }, null, { timeout: 30000 });
     return page;
 }
@@ -31,7 +32,7 @@ async function loadSnap(page) {
 function snapEval(page, fn, arg) {
     return page.evaluate(
         ([src, a]) => {
-            const ide = world.children[0];
+            const ide = world.children.find(m => m instanceof IDE_Morph);
             // eslint-disable-next-line no-eval
             return eval(`(${src})`)(ide, a);
         },

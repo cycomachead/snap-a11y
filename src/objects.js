@@ -96,7 +96,7 @@ CustomBlockDefinition, exportEmbroidery, CustomHatBlockMorph, HandMorph*/
 
 /*jshint esversion: 11*/
 
-modules.objects = '2026-June-02';
+modules.objects = '2026-August-07';
 
 var SpriteMorph;
 var StageMorph;
@@ -1321,7 +1321,10 @@ SpriteMorph.prototype.primitiveBlocks = function () {
         fork: {
             type: 'command',
             category: 'control',
-            spec: 'launch %cmdRing %inputs'
+            spec: 'launch %cmdRing %inputs',
+            src: `(
+                (prim t fork script inputs)
+                (run (process (get script) : (get inputs))))`
         },
         evaluate: {
             type: 'reporter',
@@ -1501,6 +1504,37 @@ SpriteMorph.prototype.primitiveBlocks = function () {
                     (get value)
                     (pipe (call (item 1 (get functions)) (get value)) :
                         (cdr (get functions))))))`
+        },
+
+        // Processes
+        reportNewProcess: {
+            type: 'reporter',
+            reports: 'process',
+            category: 'control',
+            spec: 'new process %cmdRing %inputs',
+            code: 'process'
+        },
+        reportProcessAttribute: {
+            type: 'reporter',
+            reports: 'any',
+            category: 'control',
+            spec: '%procAttribs of process %p',
+            defaults: [['script']],
+            code: 'getProcess'
+        },
+        reportProcessState: {
+            type: 'predicate',
+            category: 'control',
+            spec: 'is process %p %procStates ?',
+            defaults: [null, ['running']],
+            code: 'isProcess'
+        },
+        doChangeProcess: {
+            type: 'command',
+            category: 'control',
+            spec: '%procActions process %p',
+            defaults: [['pause']],
+            code: 'changeProcess'
         },
 
         // Sensing
@@ -3031,6 +3065,14 @@ SpriteMorph.prototype.newPrimitivesSince = function (version) {
             'doDrawOn'
         );
     }
+    if (version < 12.1) {
+        selectors.push(
+            'reportNewProcess',
+            'reportProcessAttribute',
+            'reportProcessState',
+            'doChangeProcess'
+        );
+    }
 
     return selectors;
 };
@@ -3313,7 +3355,7 @@ SpriteMorph.prototype.init = function (globals) {
 SpriteMorph.prototype.fullCopy = function (forClone) {
     var c = SpriteMorph.uber.fullCopy.call(this),
         arr = [],
-        cb, effect;
+        shadowed, cb, effect;
 
     // make sure the clone has its own canvas to recycle
     // needs to be copied instead of redrawn, because at
@@ -3337,6 +3379,7 @@ SpriteMorph.prototype.fullCopy = function (forClone) {
     this.inheritedAttributes.forEach(att => arr.push(att));
     c.inheritedAttributes = arr;
     if (forClone) {
+        shadowed = ['costumes', 'sounds'];
         c.exemplar = this;
         c.customBlocks = [];
         c.variables = new VariableFrame(null, c);
@@ -3346,7 +3389,18 @@ SpriteMorph.prototype.fullCopy = function (forClone) {
         );
         this.addSpecimen(c);
         this.cachedPropagation = false;
-        ['scripts', 'costumes', 'sounds'].forEach(att => {
+
+        // scan my toplevel scripts for custom blocks with block-instance vars
+        // if there aren't any my scripts can safely be inherited
+        if (
+            this.scripts.children.some(any => any.allChildren().some(each =>
+                each.isCustomBlock && each.variables.names().length))
+        ) {
+            c.scripts = this.scripts.fullCopy();
+        } else {
+            shadowed.push('scripts');
+        }
+        shadowed.forEach(att => {
             if (!contains(c.inheritedAttributes, att)) {
                 c.inheritedAttributes.push(att);
             }
@@ -4031,6 +4085,11 @@ SpriteMorph.prototype.blockTemplates = function (
         blocks.push('-');
         blocks.push(block('receiveSlotEvent'));
         blocks.push(block('doSetSlot'));
+        blocks.push('-');
+        blocks.push(block('reportNewProcess'));
+        blocks.push(block('reportProcessAttribute'));
+        blocks.push(block('reportProcessState'));
+        blocks.push(block('doChangeProcess'));
 
         // for debugging: ///////////////
         if (devMode) {
@@ -5034,6 +5093,9 @@ SpriteMorph.prototype.searchBlocks = function (
         });
         showSelection();
         searchPane.changed();
+        if (ide.announceSearchResults) { // accessibility: read the results
+            ide.announceSearchResults(blocks, selection);
+        }
     }
 
     searchPane.owner = this;
@@ -5081,6 +5143,9 @@ SpriteMorph.prototype.searchBlocks = function (
             }
             selection = blocksList[idx];
             showSelection();
+            if (ide.announceBlockSelection) { // accessibility
+                ide.announceBlockSelection(selection);
+            }
             return;
         case 40: // down arrow
             if (!scriptFocus || !selection) {return; }
@@ -5090,6 +5155,9 @@ SpriteMorph.prototype.searchBlocks = function (
             }
             selection = blocksList[idx];
             showSelection();
+            if (ide.announceBlockSelection) { // accessibility
+                ide.announceBlockSelection(selection);
+            }
             return;
         default:
             nop();
@@ -11858,6 +11926,11 @@ StageMorph.prototype.blockTemplates = function (
         blocks.push('-');
         blocks.push(block('receiveSlotEvent'));
         blocks.push(block('doSetSlot'));
+        blocks.push('-');
+        blocks.push(block('reportNewProcess'));
+        blocks.push(block('reportProcessAttribute'));
+        blocks.push(block('reportProcessState'));
+        blocks.push(block('doChangeProcess'));
 
         // for debugging: ///////////////
         if (this.world()?.isDevMode) {
@@ -13558,6 +13631,8 @@ SpriteBubbleMorph.prototype.dataAsMorph = function (data) {
             );
             return menu;
         };
+    } else if (data instanceof Process) {
+        contents = data.widget();
     } else if (typeof data === 'boolean') {
         img = sprite.booleanMorph(data).fullImage();
         contents = new Morph();
@@ -15369,6 +15444,8 @@ CellMorph.prototype.dataAsMorph = function (data) {
             contents.enableSelecting();
         }
         contents.setColor(WHITE);
+    } else if (data instanceof Process) {
+        contents = data.widget();
     } else if (typeof data === 'boolean') {
         img = SpriteMorph.prototype.booleanMorph.call(
             null,
@@ -15536,7 +15613,8 @@ CellMorph.prototype.update = function () {
     // special case for observing sprites
     if (!isSnapObject(this.contents) &&
         !(this.contents instanceof Costume) &&
-        !(this.contents instanceof Context)
+        !(this.contents instanceof Context) &&
+        !(this.contents instanceof Process)
     ) {
         return;
     }

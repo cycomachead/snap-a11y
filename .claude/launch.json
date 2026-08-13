@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "snap-a11y-static",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [".nocache_server.py"],
+      "port": 8765
+    }
+  ]
+}

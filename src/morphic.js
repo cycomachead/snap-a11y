@@ -1376,7 +1376,7 @@
 
 /*jshint esversion: 11, bitwise: false*/
 
-var morphicVersion = '2026-August-07';
+var morphicVersion = '2026-August-13';
 var modules = {}; // keep track of additional loaded modules
 var useBlurredShadows = true;
 var ZOOM = 1;
@@ -3138,17 +3138,33 @@ Node.prototype.toString = function () {
 Node.prototype.addChild = function (aNode) {
     this.children.push(aNode);
     aNode.parent = this;
+    // accessibility: build parallel DOM nodes for accessible morphs once
+    // they're attached under a world (a no-op for plain decorative leaves)
+    if (aNode.createAccessibleElementTree &&
+            (aNode.isAccessible || aNode.children.length)) {
+        aNode.createAccessibleElementTree();
+    }
 };
 
 Node.prototype.addChildFirst = function (aNode) {
     this.children.splice(0, null, aNode);
     aNode.parent = this;
+    if (aNode.createAccessibleElementTree &&
+            (aNode.isAccessible || aNode.children.length)) {
+        aNode.createAccessibleElementTree();
+    }
 };
 
 Node.prototype.removeChild = function (aNode) {
     var idx = this.children.indexOf(aNode);
     if (idx !== -1) {
         this.children.splice(idx, 1);
+    }
+    // accessibility: tear down the removed subtree's parallel DOM nodes
+    // (aNode may be null - the original removeChild tolerates that)
+    if (aNode && aNode.destroyAccessibleElementTree &&
+            (aNode.a11yElement || (aNode.children && aNode.children.length))) {
+        aNode.destroyAccessibleElementTree();
     }
 };
 
@@ -3335,8 +3351,6 @@ Morph.prototype.init = function () {
     this.customContextMenu = null;
     this.lastTime = Date.now();
     this.onNextStep = null; // optional function to be run once
-    this.acceptsFocus = null; // null: auto-detect, true/false: explicit policy
-    this.isFocused = false;
 };
 
 // Morph string representation: e.g. 'a Morph 2 [20@45 | 130@250]'
@@ -3353,9 +3367,10 @@ Morph.prototype.toString = function () {
 // Morph deleting:
 
 Morph.prototype.destroy = function () {
-    var world = this.world();
-    if (world && world.focusedMorph === this) {
-        world.setFocusedMorph(null);
+    // accessibility: tear down my parallel DOM node(s); also covers the
+    // detached case where removeChild won't run
+    if (this.a11yElement && this.destroyAccessibleElementTree) {
+        this.destroyAccessibleElementTree();
     }
     if (this.parent !== null) {
         this.fullChanged();
@@ -3789,24 +3804,6 @@ Morph.prototype.fullDrawOn = function (aContext, aRect) {
     if (!this.isVisible) {return; }
     this.drawOn(aContext, aRect);
     this.children.forEach(child => child.fullDrawOn(aContext, aRect));
-    if (this.isFocused) {
-        this.drawFocusRing(aContext, aRect);
-    }
-};
-
-Morph.prototype.drawFocusRing = function (ctx, rect) {
-    var ring = this.bounds.expandBy(3).intersect(rect);
-    if (!ring.extent().gt(ZERO)) {return; }
-    ctx.save();
-    ctx.strokeStyle = 'rgba(117, 190, 255, 0.95)';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(
-        ring.left() + 1,
-        ring.top() + 1,
-        Math.max(ring.width() - 2, 1),
-        Math.max(ring.height() - 2, 1)
-    );
-    ctx.restore();
 };
 
 Morph.prototype.hide = function () {
@@ -3974,6 +3971,14 @@ Morph.prototype.changed = function () {
     if (w instanceof WorldMorph) {
         w.broken.push(this.visibleBounds().spread());
     }
+    // accessibility: keep my parallel DOM node and the focus ring glued to me
+    if (this.a11yElement) {
+        this.syncAccessibleGeometry();
+    }
+    if (w instanceof WorldMorph && w.focusedMorph === this &&
+            w.lastInputWasKeyboard) {
+        w.updateFocusRing(true);
+    }
     if (this.parent) {
         this.parent.childChanged(this);
     }
@@ -4125,6 +4130,16 @@ Morph.prototype.copy = function () {
     c.parent = null;
     c.children = [];
     c.bounds = this.bounds.copy();
+    // accessibility: a copy must NOT inherit my parallel DOM node, id or role -
+    // it starts fresh and gets (re)tagged for its new context (e.g. a block
+    // dragged from the palette into the scripting area)
+    c.a11yElement = null;
+    c.a11yId = null;
+    c._a11yDomParentMorph = null;
+    c.isAccessible = false;
+    c.ariaRole = null;
+    c._ariaLabel = null;
+    c.ariaAttributes = null;
     return c;
 };
 
@@ -4783,14 +4798,6 @@ Morph.prototype.previousEntryField = function (current) {
         return fields[fields.length - 1];
     }
     return fields[0];
-};
-
-Morph.prototype.isFocusable = function () {
-    return this.isVisible &&
-        (this.acceptsFocus === true ||
-            (this.acceptsFocus === null &&
-                this.mouseClickLeft &&
-                this.mouseClickLeft !== nop));
 };
 
 Morph.prototype.tab = function (editField) {
@@ -6972,7 +6979,6 @@ SliderButtonMorph.prototype.init = function (orientation) {
     this.is3D = false;
     this.hasMiddleDip = true;
     SliderButtonMorph.uber.init.call(this, orientation);
-    this.acceptsFocus = true;
 };
 
 SliderButtonMorph.prototype.autoOrientation = nop;
@@ -7516,7 +7522,6 @@ MouseSensorMorph.prototype.init = function (edge, border, borderColor) {
     this.isTouched = false;
     this.upStep = 0.05;
     this.downStep = 0.02;
-    this.acceptsFocus = false;
 };
 
 MouseSensorMorph.prototype.touch = function () {
@@ -8379,6 +8384,11 @@ MenuMorph.prototype.popup = function (world, pos) {
     world.add(this);
     world.activeMenu = this;
     this.world = world; // optionally enable keyboard support
+    // accessibility: move AT focus into the menu on open so a screen reader
+    // reads its title + item count immediately (covers mouse/right-click opens)
+    if (this.enterAccessibleFocus) {
+        this.enterAccessibleFocus();
+    }
     this.fullChanged();
 };
 
@@ -8450,6 +8460,10 @@ MenuMorph.prototype.getFocus = function () {
     this.selection = null;
     this.selectFirst();
     this.hasFocus = true;
+    // accessibility: move AT focus into the menu so a screen reader follows it
+    if (this.syncAccessibleMenuFocus) {
+        this.syncAccessibleMenuFocus();
+    }
 };
 
 MenuMorph.prototype.processKeyDown = function (event) {
@@ -8465,6 +8479,9 @@ MenuMorph.prototype.processKeyDown = function (event) {
         }
         return;
     case 27: // 'esc'
+        if (this.parent instanceof MenuMorph) {
+            return this.leaveSubmenu(); // close submenu, refocus parent item
+        }
         return this.destroy();
     case 37: // 'left arrow'
         return this.leaveSubmenu();
@@ -8566,6 +8583,10 @@ MenuMorph.prototype.leaveSubmenu = function () {
         this.destroy();
         menu.world.keyboardFocus = menu;
         menu.world.activeMenu = menu;
+        // accessibility: return AT focus to the parent menu
+        if (menu.syncAccessibleMenuFocus) {
+            menu.syncAccessibleMenuFocus();
+        }
     }
 };
 
@@ -8575,6 +8596,10 @@ MenuMorph.prototype.select = function (aMenuItem) {
     aMenuItem.rerender();
     aMenuItem.scrollIntoView();
     this.selection = aMenuItem;
+    // accessibility: announce the new selection via aria-activedescendant
+    if (this.updateActiveDescendant) {
+        this.updateActiveDescendant();
+    }
 };
 
 MenuMorph.prototype.destroy = function () {
@@ -8583,6 +8608,10 @@ MenuMorph.prototype.destroy = function () {
     }
     if (!this.isListContents && (this.world.activeMenu === this)) {
         this.world.activeMenu = null;
+    }
+    // accessibility: hand focus back to the trigger when the chain closes
+    if (this.restoreAccessibleFocus) {
+        this.restoreAccessibleFocus();
     }
     MenuMorph.uber.destroy.call(this);
 };
@@ -9293,11 +9322,6 @@ StringMorph.prototype.disableSelecting = function () {
     delete this.mouseMove;
 };
 
-StringMorph.prototype.isFocusable = function () {
-    return this.isVisible &&
-        (this.acceptsFocus || this.isEditable || this.enableLinks);
-};
-
 // TextMorph ////////////////////////////////////////////////////////////////
 
 // I am a multi-line, word-wrapping String, quasi-inheriting from StringMorph
@@ -9731,8 +9755,6 @@ TextMorph.prototype.enableSelecting = StringMorph.prototype.enableSelecting;
 
 TextMorph.prototype.disableSelecting = StringMorph.prototype.disableSelecting;
 
-TextMorph.prototype.isFocusable = StringMorph.prototype.isFocusable;
-
 TextMorph.prototype.selectAllAndEdit = function () {
     this.edit();
     this.selectAll();
@@ -9950,7 +9972,6 @@ TriggerMorph.prototype.init = function (
     TriggerMorph.uber.init.call(this);
 
     // override inherited properites:
-    this.acceptsFocus = true;
     this.color = WHITE;
     this.createLabel();
 };
@@ -10373,6 +10394,11 @@ MenuItemMorph.prototype.popUpSubmenu = function () {
     menu.add(this.action);
     menu.submenu = this.action;
     menu.submenu.world = menu.world; // keyboard control
+    // accessibility: mark this item expanded and remember it for collapse
+    if (this.a11yElement) {
+        this.a11yElement.setAttribute('aria-expanded', 'true');
+    }
+    this.action.a11yTriggerItem = this;
     this.action.fullChanged();
 };
 
@@ -10431,9 +10457,6 @@ FrameMorph.prototype.fullDrawOn = function (ctx, aRect) {
     });
     if (shadow) {
         shadow.drawOn(ctx, aRect);
-    }
-    if (this.isFocused) {
-        this.drawFocusRing(ctx, aRect);
     }
 };
 
@@ -11154,7 +11177,6 @@ StringFieldMorph.prototype.init = function (
     StringFieldMorph.uber.init.call(this);
     this.color = WHITE;
     this.isEditable = true;
-    this.acceptsFocus = true;
     this.acceptsDrops = false;
     this.createText();
 };
@@ -11198,10 +11220,6 @@ StringFieldMorph.prototype.mouseClickLeft = function (pos) {
     } else {
         this.escalateEvent('mouseClickLeft', pos);
     }
-};
-
-StringFieldMorph.prototype.isFocusable = function () {
-    return this.isVisible && this.isEditable && this.acceptsFocus;
 };
 
 // BouncerMorph ////////////////////////////////////////////////////////
@@ -11654,9 +11672,6 @@ HandMorph.prototype.processMouseUp = function () {
         }
         if (this.clickTarget && this.clickTarget.allParents().includes(morph)) {
             morph[expectedClick](this.bounds.origin);
-            if (expectedClick === 'mouseClickLeft') {
-                this.world.setFocusedMorph(this.clickTarget || morph);
-            }
             if (this.inputTarget &&
                 !this.inputTarget.bounds.containsPoint(this.bounds.origin) &&
                 this.inputTarget.mouseLeave
@@ -12165,7 +12180,6 @@ WorldMorph.prototype.init = function (aCanvas, fillPage) {
     this.hand = new HandMorph(this);
     this.keyboardHandler = null;
     this.keyboardFocus = null;
-    this.focusedMorph = null;
     this.cursor = null;
     this.lastEditedText = null;
     this.activeMenu = null;
@@ -12178,6 +12192,18 @@ WorldMorph.prototype.init = function (aCanvas, fillPage) {
     this.initKeyboardHandler();
     this.resetKeyboardHandler();
     this.initEventListeners();
+
+    // accessibility - the single global AT/keyboard focus state (the behavior
+    // built on top of these lives in accessibility.js):
+    this.focusedMorph = null; // the morph the screen reader / focus ring is on
+    this.lastInputWasKeyboard = false; // :focus-visible heuristic
+    this.a11yTextEditing = false; // true while editing text via the textarea
+    this.a11yRoot = null; // parallel accessible DOM container
+    this.focusRing = null; // FocusIndicatorMorph overlay
+    this._a11ySyncingFocus = false; // re-entrancy guard for focus sync
+    if (this.initAccessibility) {
+        this.initAccessibility();
+    }
 };
 
 // World Morph display:
@@ -12431,15 +12457,7 @@ WorldMorph.prototype.initKeyboardHandler = function () {
                         kbd.world.keyboardFocus.processKeyPress) {
                     kbd.world.keyboardFocus.processKeyPress(event);
                 }
-                if (!kbd.world.keyboardFocus) {
-                    kbd.world.focusNextField(event.shiftKey);
-                }
                 event.preventDefault();
-            } else if (!kbd.world.keyboardFocus &&
-                    (event.keyCode === 32 || event.keyCode === 35)) {
-                if (kbd.world.activateFocusedMorph()) {
-                    event.preventDefault();
-                }
             }
             // suppress cmd-d/f/i/p/s override
             if ((event.ctrlKey || event.metaKey) &&
@@ -12668,102 +12686,6 @@ WorldMorph.prototype.beginBulkDrop = nop;
 WorldMorph.prototype.endBulkDrop = nop;
 
 // WorldMorph text field tabbing:
-
-WorldMorph.prototype.focusableMorphAt = function (aMorph) {
-    var morph = aMorph;
-    while (morph && morph !== this && !morph.isFocusable()) {
-        morph = morph.parent;
-    }
-    return morph === this ? null : morph;
-};
-
-WorldMorph.prototype.setFocusedMorph = function (aMorph) {
-    var oldFocus = this.focusedMorph,
-        newFocus = this.focusableMorphAt(aMorph);
-
-    if (oldFocus === newFocus) {
-        return newFocus;
-    }
-    if (oldFocus) {
-        oldFocus.isFocused = false;
-        if (oldFocus.reactToBlur) {
-            oldFocus.reactToBlur();
-        }
-        oldFocus.rerender();
-    }
-    this.focusedMorph = newFocus;
-    if (newFocus) {
-        newFocus.isFocused = true;
-        if (newFocus.reactToFocus) {
-            newFocus.reactToFocus();
-        }
-        newFocus.scrollIntoView();
-        newFocus.rerender();
-    }
-    return this.focusedMorph;
-};
-
-WorldMorph.prototype.allFocusableMorphs = function () {
-    return this.allChildren().filter(each =>
-        each.parent &&
-        each.isFocusable()
-    );
-};
-
-WorldMorph.prototype.nextFocusableMorph = function (current) {
-    var fields = this.allFocusableMorphs(),
-        idx = fields.indexOf(current);
-    if (idx !== -1) {
-        if (fields.length > idx + 1) {
-            return fields[idx + 1];
-        }
-    }
-    return fields[0];
-};
-
-WorldMorph.prototype.previousFocusableMorph = function (current) {
-    var fields = this.allFocusableMorphs(),
-        idx = fields.indexOf(current);
-    if (idx !== -1) {
-        if (idx > 0) {
-            return fields[idx - 1];
-        }
-        return fields[fields.length - 1];
-    }
-    return fields[0];
-};
-
-WorldMorph.prototype.focusNextField = function (backward) {
-    var next = backward ?
-            this.previousFocusableMorph(this.focusedMorph)
-            : this.nextFocusableMorph(this.focusedMorph);
-    if (!next) {
-        return null;
-    }
-    this.setFocusedMorph(next);
-    if (next.isEditable &&
-            (next instanceof StringMorph || next instanceof TextMorph)) {
-        next.selectAll();
-        next.edit();
-    }
-    return next;
-};
-
-WorldMorph.prototype.activateFocusedMorph = function () {
-    var focus = this.focusedMorph;
-    if (!focus || !focus.isFocusable()) {
-        return false;
-    }
-    if (focus.trigger) {
-        focus.trigger();
-        return true;
-    }
-    if (focus.mouseClickLeft) {
-        focus.mouseClickLeft(focus.center());
-        return true;
-    }
-    return false;
-};
 
 WorldMorph.prototype.nextTab = function (editField) {
     var next = this.nextEntryField(editField);
@@ -13114,6 +13036,12 @@ WorldMorph.prototype.edit = function (aStringOrTextMorph) {
     // create a new cursor
     this.cursor = new CursorMorph(aStringOrTextMorph, this.keyboardHandler);
     this.keyboardFocus = this.cursor;
+    // accessibility: native focus stays on the textarea, but track the edited
+    // morph as the AT focus so the ring follows it
+    this.a11yTextEditing = true;
+    if (this.setFocus) {
+        this.setFocus(aStringOrTextMorph, {isText: true});
+    }
     aStringOrTextMorph.parent.add(this.cursor);
     this.cursor.rerender();
     if (MorphicPreferences.useSliderForInput) {
@@ -13125,7 +13053,6 @@ WorldMorph.prototype.edit = function (aStringOrTextMorph) {
         aStringOrTextMorph.escalateEvent('freshTextEdit', aStringOrTextMorph);
     }
     this.lastEditedText = aStringOrTextMorph;
-    this.setFocusedMorph(aStringOrTextMorph);
 };
 
 WorldMorph.prototype.slide = function (aStringOrTextMorph) {
@@ -13182,6 +13109,11 @@ WorldMorph.prototype.stopEditing = function () {
     }
     this.keyboardFocus = null;
     this.lastEditedText = null;
+    // accessibility: leave text-edit mode and hide the focus ring
+    this.a11yTextEditing = false;
+    if (this.updateFocusRing) {
+        this.updateFocusRing(false);
+    }
 };
 
 WorldMorph.prototype.toggleBlurredShadows = function () {

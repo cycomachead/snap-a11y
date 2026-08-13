@@ -2,6 +2,29 @@
 
 ## in development:
 
+### 2026-08-13 — merge the parallel-DOM screen-reader prototype
+* merged the morphic-a11y-prototype branch: src/accessibility.js now
+  mirrors opted-in morphs into a parallel, invisible DOM tree (roving
+  tabindex, aria-activedescendant, live-region announcements, two-way
+  focus sync), with IDE landmark/toolbar/palette wiring in gui.js
+* the prototype supersedes the earlier canvas focus-ring experiment in
+  morphic.js — in the merge the canvas system (acceptsFocus, isFocused,
+  setFocusedMorph, drawFocusRing, world-level tab handling) was removed
+  in favor of the parallel DOM's focus manager; focus-visible semantics
+  are preserved: the FocusIndicatorMorph ring only shows when the last
+  input was the keyboard, and native browser Tab now drives navigation
+  through real DOM elements
+* restored the aria-label on the hidden morphic_keyboard textarea (the
+  prototype was replayed onto vanilla sources and dropped it); it still
+  receives real focus during text editing and axe flags it otherwise
+* added src/accessibility.js to snap.html (after morphic.js) and to the
+  sw.js precache list; bumped the PWA cache version
+* tests: helpers and specs no longer assume the IDE is
+  world.children[0] (the focus ring is added to the world first);
+  replaced the "AX tree exposes almost nothing" baseline with positive
+  assertions on the landmarks, category radios, and toolbar buttons the
+  parallel DOM now exposes
+
 ### 2026-08-13 — sync with upstream & focus-visible ring semantics
 * merged jmoenig/Snap master (12.1.0-dev-260808, 83 commits) into the a11y
   fork; conflicts were limited to snap.html script cache-busters and the

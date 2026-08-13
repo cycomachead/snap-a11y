@@ -63,17 +63,16 @@ test.describe('fixture projects open in the IDE', () => {
             }
             await page.goto(`/snap.html#open:tests/fixtures/${fixture.file}`);
             await page.waitForFunction(
-                expected =>
-                    typeof world !== 'undefined' &&
-                    world &&
-                    world.children.length > 0 &&
-                    world.children[0].getProjectName &&
-                    world.children[0].getProjectName() === expected,
+                expected => {
+                    const ide = typeof world !== 'undefined' && world &&
+                        world.children.find(m => m instanceof IDE_Morph);
+                    return ide && ide.getProjectName() === expected;
+                },
                 fixture.projectName,
                 { timeout: fixture.timeout || 30000 }
             );
             const state = await page.evaluate(() => {
-                const ide = world.children[0];
+                const ide = world.children.find(m => m instanceof IDE_Morph);
                 return {
                     sprites: ide.sprites.asArray().map(s => s.name),
                     scripts: ide.sprites.asArray().reduce(

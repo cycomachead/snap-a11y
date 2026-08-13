@@ -13,18 +13,29 @@ test.describe('accessibility tree', () => {
         await loadSnap(page);
     });
 
-    test('baseline: the AX tree exposes almost nothing (canvas-only UI)', async ({ page }) => {
+    test('the parallel DOM exposes the IDE to assistive technology', async ({ page }) => {
+        // The parallel DOM (src/accessibility.js) mirrors the IDE into
+        // real ARIA elements: an application root, named landmark
+        // regions, the category radio group, and the toolbar buttons.
         const nodes = await getExposedAXNodes(page);
         const roles = nodes.map(n => n.role);
-        // Today assistive technology receives just the document and the
-        // hidden keyboard textarea — no toolbar, tabs, lists, or buttons.
-        expect(roles).not.toContain('toolbar');
-        expect(roles).not.toContain('tab');
-        expect(roles).not.toContain('button');
-        // When this assertion starts failing, the parallel DOM has begun
-        // exposing real semantics: replace this test with a positive
-        // snapshot and activate the @spec test below.
-        expect(nodes.length).toBeLessThan(10);
+        const names = nodes.map(n => n.name).filter(Boolean);
+        expect(roles).toContain('application');
+        expect(roles).toContain('region');
+        expect(roles).toContain('radiogroup');
+        expect(roles).toContain('button');
+        expect(roles.filter(r => r === 'region').length)
+            .toBeGreaterThanOrEqual(6);
+        for (const landmark of [
+            'Control Bar', 'Block Palette', 'Scripting Area',
+            'Stage', 'Sprite Corral'
+        ]) {
+            expect(names).toContain(landmark);
+        }
+        for (const category of ['Motion', 'Looks', 'Control', 'Variables']) {
+            expect(names).toContain(category);
+        }
+        expect(names).toContain('Green flag');
     });
 
     test('target IDE tree shape @spec', async ({ page }) => {

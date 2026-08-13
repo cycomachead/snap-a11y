@@ -438,6 +438,9 @@ IDE_Morph.prototype.openIn = function (world) {
 
     this.buildPanes();
     world.add(this);
+    // accessibility: label the entry point + expose the panes as landmarks
+    this.updateAccessibleLabel();
+    this.setAccessibleRegions();
     this.applySavedMagnification();
     // this.applySavedStageScale(); // commented out for now
     world.userMenu = this.userMenu;
@@ -1652,6 +1655,8 @@ IDE_Morph.prototype.createControlBar = function () {
             suffix = myself.world().isDevMode ?
                 ' - ' + localize('development mode') : '',
             name, scene, txt;
+
+        myself.updateAccessibleLabel(); // keep the AT entry-point label in sync
 
         if (this.label) {
             this.label.destroy();
@@ -2940,6 +2945,973 @@ IDE_Morph.prototype.fixLayout = function (situation) {
     if (mz < (ZOOM * 100) && mz >= 100) {
         this.setZoom(mz);
     }
+
+    // accessibility: (re)tag the panes as ARIA landmark regions (cheap; also
+    // catches panes that get recreated, e.g. palette / scripts / corral)
+    this.setAccessibleRegions();
+};
+
+// IDE_Morph accessibility (ARIA landmark regions)
+
+IDE_Morph.prototype.accessibleRegions = function () {
+    // the panes exposed as landmarks, paired with their labels, in reading order
+    return [
+        [this.controlBar, 'Control Bar'],
+        [this.palette, 'Block Palette'],
+        [this.spriteBar, 'Scripting Area Toolbar'],
+        [this.spriteEditor, 'Scripting Area'],
+        [this.stage, 'Stage'],
+        [this.corralBar, 'Sprite Corral Toolbar'],
+        [this.corral, 'Sprite Corral']
+    ];
+};
+
+IDE_Morph.prototype.setAccessibleRegions = function () {
+    // expose the IDE's panes as ARIA landmark regions so a screen-reader user
+    // can jump straight to them. Idempotent: called from openIn() and from
+    // fixLayout() so recreated panes (palette / scripts / corral) get re-tagged.
+    var world = this.world(),
+        myself = this,
+        added = false;
+    if (!world || !world.accessibilityEnabled) {return; }
+    this.accessibleRegions().forEach(pane => {
+        if (this.tagAccessibleRegion(pane[0], pane[1])) {
+            added = true;
+        }
+    });
+    // the Control Bar landmark spans the full width, covering the Snap! app menu
+    if (this.controlBar && this.logo && !this.controlBar._a11yFullWidth) {
+        this.controlBar._a11yFullWidth = true;
+        this.controlBar.a11yBounds = function () {
+            return myself.logo.bounds.merge(this.bounds);
+        };
+        if (this.controlBar.a11yElement) {
+            this.controlBar.syncAccessibleGeometry();
+        }
+    }
+    this.setAccessibleButtons();
+    this.setAccessiblePalette();
+    this.setAccessibleScripts();
+    if (added) {
+        this.orderAccessibleRegions(); // keep landmark reading order stable
+    }
+};
+
+IDE_Morph.prototype.tagAccessibleRegion = function (morph, label) {
+    // answer true if a NEW accessible element was created for this pane
+    if (!morph || morph.a11yIgnore) {return false; }
+    if (morph.isAccessible && morph.a11yElement) {return false; } // already done
+    morph.isAccessible = true;
+    morph.ariaTag = 'section'; // <section aria-label> is an implicit ARIA region
+    morph.excludeFromTabRing = true; // a landmark, navigated to, not Tab-stopped
+    morph.setAriaLabel(localize(label));
+    if (morph.createAccessibleElement) {
+        morph.createAccessibleElement();
+    }
+    return !!morph.a11yElement;
+};
+
+IDE_Morph.prototype.orderAccessibleRegions = function () {
+    // re-append the region elements in reading order so panes that were
+    // recreated (and thus appended last) don't scramble the landmark order
+    this.accessibleRegions().forEach(pane => {
+        var el = pane[0] && pane[0].a11yElement;
+        if (el && el.parentNode) {
+            el.parentNode.appendChild(el);
+        }
+    });
+};
+
+IDE_Morph.prototype.setAccessibleButtons = function () {
+    // make the primary control-bar buttons + block-category buttons focusable,
+    // tab-able, labelled accessible buttons. Idempotent (re-run on fixLayout).
+    var bar = this.controlBar,
+        ctrl = this.controlBar;
+
+    // the Snap! / app menu (the logo) - nest it inside the Control Bar region
+    if (this.logo && ctrl && !this.logo._a11yInControlBar) {
+        this.logo._a11yInControlBar = true;
+        this.logo.a11yParentMorph = function () { return ctrl; };
+    }
+    this.tagAccessibleButton(this.logo, 'Snap! menu', {haspopup: true});
+
+    if (bar) {
+        this.tagAccessibleButton(bar.projectButton, 'Project menu', {haspopup: true});
+        this.tagAccessibleButton(bar.cloudButton, 'Cloud menu', {haspopup: true});
+        this.tagAccessibleButton(
+            bar.settingsButton, 'Settings menu', {haspopup: true});
+        this.tagAccessibleButton(bar.startButton, 'Green flag');
+        this.tagAccessibleButton(bar.pauseButton, 'Pause', {pressed: true});
+        this.tagAccessibleButton(bar.stopButton, 'Stop', {pressed: true});
+        this.tagAccessibleButton(bar.stageSizeButton, 'Stage size', {pressed: true});
+        this.tagAccessibleButton(
+            bar.appModeButton, 'Presentation mode', {pressed: true});
+        this.tagAccessibleButton(
+            bar.steppingButton, 'Visible stepping', {pressed: true});
+    }
+
+    // the sprite corral toolbar buttons (labelled from their hints)
+    this.tagAccessibleButtonsIn(this.corralBar);
+
+    // the block-category selector buttons (as an arrow-navigable radiogroup)
+    this.setAccessibleCategories();
+};
+
+IDE_Morph.prototype.tagAccessibleButtonsIn = function (container) {
+    // tag every PushButton / ToggleButton child of a toolbar as an accessible
+    // button, labelled from its hint (tooltip) or label string
+    if (!container) {return; }
+    container.children.forEach(child => {
+        if (child.isAccessible) {return; }
+        if (child instanceof PushButtonMorph ||
+                child instanceof ToggleButtonMorph) {
+            var label = child.hint ||
+                (typeof child.labelString === 'string' ?
+                    child.labelString : null);
+            if (label) { // skip unlabelled buttons (avoid a bare "Button")
+                this.tagAccessibleButton(child, label,
+                    child instanceof ToggleButtonMorph ? {pressed: true} : {});
+            }
+        }
+    });
+};
+
+IDE_Morph.prototype.tagAccessibleButton = function (morph, label, options) {
+    options = options || {};
+    if (!morph || morph.a11yIgnore) {return; }
+    if (morph.isAccessible && morph.a11yElement) {return; } // already tagged
+    morph.isAccessible = true;
+    morph.ariaRole = 'button';
+    morph.ariaTag = 'button'; // a real <button>: Enter/Space + AT fire its click
+    morph.setAriaLabel(localize(label).replace(/[\n\r]+/g, ' '));
+    if (options.haspopup) {
+        morph.setAria('aria-haspopup', 'menu');
+        morph.setAria('aria-expanded', 'false');
+    }
+    if (options.pressed) {
+        morph.a11yUsePressed = true;
+    }
+    if (morph.createAccessibleElement) {
+        morph.createAccessibleElement();
+    }
+    if (options.pressed && morph.a11yElement) {
+        morph.a11yElement.setAttribute(
+            'aria-pressed', morph.state ? 'true' : 'false');
+    }
+};
+
+IDE_Morph.prototype.setAccessibleCategories = function () {
+    // the block-category selector is an ARIA radiogroup: ONE tab stop, with
+    // up/down (or left/right) arrows moving + selecting the category
+    var cats = this.categories,
+        myself = this;
+    if (!cats || !cats.buttons || !cats.buttons.length) {return; }
+
+    if (!cats.isAccessible) {
+        cats.isAccessible = true;
+        cats.ariaRole = 'radiogroup';
+        cats.a11yFocusMode = 'activedescendant';
+        cats.setAriaLabel(localize('Categories'));
+        cats.a11yHandleKey = function (event) {
+            return myself.handleCategoryKey(event);
+        };
+        cats.reactToFocus = function () {
+            myself.updateCategoryActiveDescendant();
+        };
+        cats.a11yActiveTarget = function () {
+            return myself.categories.buttons.find(b => b.state) || this;
+        };
+        cats.createAccessibleElement();
+    }
+    cats.buttons.forEach(btn => {
+        if (btn.isAccessible) {return; }
+        btn.isAccessible = true;
+        btn.ariaRole = 'radio';
+        btn.ariaTag = 'div';
+        btn.excludeFromTabRing = true; // the radiogroup is the single tab stop
+        btn.a11yUseChecked = true; // aria-checked reflects the selection
+        btn.setAriaLabel(localize(
+            btn.category ?
+                btn.category[0].toUpperCase() + btn.category.slice(1)
+                : 'Category'));
+        btn.ensureA11yId();
+        btn.createAccessibleElement();
+        if (btn.a11yElement) {
+            btn.a11yElement.setAttribute(
+                'aria-checked', btn.state ? 'true' : 'false');
+        }
+    });
+    this.updateCategoryActiveDescendant();
+};
+
+IDE_Morph.prototype.updateCategoryActiveDescendant = function () {
+    var cats = this.categories,
+        current;
+    if (!cats || !cats.a11yElement || !cats.buttons) {return; }
+    current = cats.buttons.find(b => b.state) || cats.buttons[0];
+    if (current) {
+        current.ensureA11yId();
+        cats.setAria('aria-activedescendant', current.a11yId);
+    }
+};
+
+IDE_Morph.prototype.handleCategoryKey = function (event) {
+    // arrow keys move + select the category (radiogroup semantics)
+    var btns = this.categories.buttons,
+        n = btns.length,
+        cur = btns.findIndex(b => b.state),
+        next;
+    switch (event.keyCode) {
+    case 38: // up
+    case 37: // left
+        next = (cur <= 0) ? n - 1 : cur - 1;
+        break;
+    case 40: // down
+    case 39: // right
+        next = (cur < 0 || cur >= n - 1) ? 0 : cur + 1;
+        break;
+    default:
+        return false;
+    }
+    btns[next].mouseClickLeft(); // select -> switch category (refresh -> checked)
+    this.updateCategoryActiveDescendant();
+    var w = this.world();
+    if (w) { w.updateFocusRing(w.lastInputWasKeyboard); } // ring -> current radio
+    return true;
+};
+
+// IDE_Morph accessibility - block palette /////////////////////////////////
+
+IDE_Morph.prototype.blockAccessibleLabel = function (block) {
+    // read the block's visible text, input slots spoken as "argument (...)"
+    var words = [];
+    (block.parts ? block.parts() : []).forEach(part => {
+        if (typeof part.text === 'string' && part.text.length) {
+            words.push(part.text);
+        } else if (/SlotMorph$/.test(part.constructor.name) &&
+                !/CSlotMorph$/.test(part.constructor.name) &&
+                !/CommandSlotMorph$/.test(part.constructor.name)) {
+            // an argument slot (NOT a C-slot, which holds a nested stack)
+            var val = '';
+            if (part.contents && part.contents() &&
+                    typeof part.contents().text === 'string') {
+                val = part.contents().text;
+            }
+            words.push(localize('argument') + ' (' + val + ')');
+        }
+    });
+    return words.join(' ').trim() ||
+        (typeof block.blockSpec === 'string' ? block.blockSpec : localize('block'));
+};
+
+IDE_Morph.prototype.templateLabel = function (block) {
+    // the palette name for a block: a custom label (by selector, from
+    // A11yBlockTemplateLabels) or just the visible words WITHOUT arguments
+    // (palette templates deliberately don't read their arguments)
+    if (block.selector && typeof A11yBlockTemplateLabels !== 'undefined' &&
+            A11yBlockTemplateLabels[block.selector]) {
+        return localize(A11yBlockTemplateLabels[block.selector]);
+    }
+    var words = [];
+    (block.parts ? block.parts() : []).forEach(part => {
+        if (typeof part.text === 'string' && part.text.length) {
+            words.push(part.text);
+        }
+    });
+    return words.join(' ').trim() ||
+        (typeof block.blockSpec === 'string' ? block.blockSpec : localize('block'));
+};
+
+IDE_Morph.prototype.updatePaletteLabel = function () {
+    // the palette listbox name includes the current category
+    var contents = this.palette && this.palette.contents,
+        cat;
+    if (!contents || !contents.a11yElement) {return; }
+    cat = this.currentCategory ?
+        this.currentCategory[0].toUpperCase() + this.currentCategory.slice(1) : '';
+    contents.setAriaLabel(
+        (cat ? localize(cat) + ' ' : '') + localize('blocks'));
+};
+
+IDE_Morph.prototype.setPaletteCurrentBlock = function (block) {
+    var contents = this.palette && this.palette.contents,
+        w = this.world();
+    if (!contents || !block) {return; }
+    contents._a11yCurrentBlock = block;
+    block.ensureA11yId();
+    contents.setAria('aria-activedescendant', block.a11yId);
+    if (w) { w.updateFocusRing(w.lastInputWasKeyboard); } // ring -> the block
+};
+
+IDE_Morph.prototype.paletteBlocks = function () {
+    var contents = this.palette && this.palette.contents;
+    return contents ? contents.children.filter(c => c instanceof BlockMorph) : [];
+};
+
+IDE_Morph.prototype.setAccessiblePalette = function () {
+    // the scrollable block list is an ARIA listbox (ONE tab stop, up/down nav);
+    // the make-a-block button + visibility checkboxes are separate tab stops
+    var palette = this.palette,
+        contents = palette && palette.contents,
+        myself = this;
+    if (!palette || !contents) {return; }
+
+    if (!contents.isAccessible) {
+        contents.isAccessible = true;
+        contents.ariaRole = 'listbox';
+        contents.a11yFocusMode = 'activedescendant';
+        contents.a11yHandleKey = event => myself.handlePaletteKey(event);
+        contents.reactToFocus = function () {
+            this._a11yCurrentBlock = null; // outline the whole palette initially
+            this.setAria('aria-activedescendant', null);
+            myself.updatePaletteLabel();
+        };
+        contents.a11yActiveTarget = function () {
+            return this._a11yCurrentBlock || myself.palette; // palette area / block
+        };
+        contents.a11ySetActiveItem = function (item) {
+            // map any clicked descendant to its top-level palette block
+            var m = item;
+            while (m && m.parent !== this) {
+                m = m.parent;
+            }
+            if (m instanceof BlockMorph) {
+                myself.setPaletteCurrentBlock(m);
+            }
+        };
+        contents.createAccessibleElement();
+    }
+    this.updatePaletteLabel();
+
+    contents.children.forEach(child => {
+        if (child.a11yIsTagged()) {return; }
+        if (child instanceof BlockMorph) {
+            child.a11yElement = null; // drop any a11y state copied from a template
+            child.a11yId = null;
+            child._a11yDomParentMorph = null;
+            child.isAccessible = true;
+            child.ariaRole = 'option';
+            child.ariaTag = 'div';
+            child.excludeFromTabRing = true; // the listbox is the tab stop
+            child.setAriaLabel(myself.templateLabel(child)); // no arguments
+            child.createAccessibleElement(); // builds a fresh node under the list
+            child.ensureA11yId();            // fresh unique id on the new element
+            if (child.a11yElement) {
+                child.a11yElement.setAttribute('aria-description',
+                    localize('Press Enter to activate the block'));
+            }
+        } else if (child instanceof ToggleMorph) {
+            child.a11yParentMorph = () => palette; // a tab stop in the region
+            child.isAccessible = true;
+            child.ariaRole = 'checkbox';
+            child.ariaTag = 'div';
+            child.a11yUseChecked = true;
+            child.setAriaLabel(
+                (typeof child.captionString === 'string' && child.captionString) ||
+                localize('show or hide'));
+            child.createAccessibleElement();
+            if (child.a11yElement) {
+                child.a11yElement.setAttribute(
+                    'aria-checked', child.state ? 'true' : 'false');
+            }
+        } else if (child instanceof PushButtonMorph) {
+            child.a11yParentMorph = () => palette; // a tab stop in the region
+            myself.tagAccessibleButton(child,
+                (typeof child.labelString === 'string' && child.labelString) ||
+                child.hint || 'Make a block');
+        }
+    });
+    this.updatePaletteActiveDescendant();
+};
+
+IDE_Morph.prototype.updatePaletteActiveDescendant = function () {
+    // keep the activedescendant valid; do NOT force a current block (so the
+    // whole palette stays outlined until the user arrows into it)
+    var contents = this.palette && this.palette.contents,
+        cur;
+    if (!contents || !contents.a11yElement) {return; }
+    cur = contents._a11yCurrentBlock;
+    if (cur && this.paletteBlocks().indexOf(cur) >= 0) {
+        cur.ensureA11yId();
+        contents.setAria('aria-activedescendant', cur.a11yId);
+    } else {
+        contents._a11yCurrentBlock = null;
+        contents.setAria('aria-activedescendant', null);
+    }
+};
+
+IDE_Morph.prototype.handlePaletteKey = function (event) {
+    var contents = this.palette.contents,
+        blocks = this.paletteBlocks(),
+        n = blocks.length,
+        cur = blocks.indexOf(contents._a11yCurrentBlock),
+        next;
+    if (!n) {return false; }
+    switch (event.keyCode) {
+    case 38: // up
+        next = (cur <= 0) ? n - 1 : cur - 1;
+        break;
+    case 40: // down
+        next = (cur < 0 || cur >= n - 1) ? 0 : cur + 1;
+        break;
+    case 13: // enter
+    case 32: // space
+        if (cur >= 0) {
+            blocks[cur].mouseClickLeft(); // activate (run the block)
+        }
+        return true;
+    default:
+        return false;
+    }
+    this.palette.scrollIntoView(blocks[next].bounds); // keep it on screen + AT
+    this.setPaletteCurrentBlock(blocks[next]);         // activedescendant + ring
+    return true;
+};
+
+// IDE_Morph accessibility - scripting area ////////////////////////////////
+// The scripting area (ScriptsMorph) is a SINGLE tab stop. Inside it:
+//   Tab / Shift+Tab  step through the selectable inputs of the scripts - each
+//                    script's top block is announced, then its inputs, then the
+//                    next script; Tab leaves the area past the last input
+//   Left / Right     same traversal, but clamped (stay inside the area)
+//   Up / Down        move between blocks (lines)
+//   Enter / Space    run the current script
+// The current block / input is highlighted with the focus ring.
+
+IDE_Morph.prototype.scriptList = function () {
+    var scripts = this.spriteEditor && this.spriteEditor.contents;
+    if (!scripts || scripts.constructor.name !== 'ScriptsMorph') {return []; }
+    return scripts.children.filter(c => c instanceof BlockMorph);
+};
+
+IDE_Morph.prototype.scriptLines = function (topBlock) {
+    // the command/hat blocks of a script in reading (depth-first) order
+    var lines = topBlock.allChildren().filter(c => c instanceof CommandBlockMorph);
+    if (!lines.length && topBlock instanceof BlockMorph) {
+        lines = [topBlock]; // a standalone reporter script
+    }
+    return lines;
+};
+
+IDE_Morph.prototype.lineArguments = function (block) {
+    // a block's editable argument slots (NOT its nested C-slots, which are
+    // navigated as their own lines with up/down)
+    if (!block.inputs) {return []; }
+    return block.inputs().filter(inp =>
+        !/CSlotMorph$/.test(inp.constructor.name) &&
+        !/CommandSlotMorph$/.test(inp.constructor.name));
+};
+
+IDE_Morph.prototype.argLabel = function (slot) {
+    var val = '';
+    if (slot instanceof ReporterBlockMorph) {
+        return this.blockAccessibleLabel(slot);
+    }
+    if (slot.contents && slot.contents() &&
+            typeof slot.contents().text === 'string') {
+        val = slot.contents().text;
+    } else if (typeof slot.evaluate === 'function') {
+        try {
+            var v = slot.evaluate();
+            val = (v === null || v === undefined) ? '' : ('' + v);
+        } catch (err) {
+            val = '';
+        }
+    }
+    return localize('argument') +
+        (val !== '' ? ' (' + val + ')' : ' (' + localize('empty') + ')');
+};
+
+IDE_Morph.prototype.blockInputItems = function (block) {
+    // every navigable input of a block in reading order, recursively
+    // descending into plugged-in reporters/predicates (which are items
+    // themselves) and into variadic (multi-arg) groups; C-slots and command
+    // slots are skipped - their nested command blocks are their own lines
+    var result = [];
+    function collect(b) {
+        (b.inputs ? b.inputs() : []).forEach(inp => {
+            if (/CSlotMorph$/.test(inp.constructor.name) ||
+                    /CommandSlotMorph$/.test(inp.constructor.name)) {
+                return;
+            }
+            if (inp instanceof ReporterBlockMorph) {
+                result.push(inp);
+                collect(inp);
+            } else if (inp instanceof MultiArgMorph) {
+                collect(inp);
+            } else {
+                result.push(inp);
+            }
+        });
+    }
+    collect(block);
+    return result;
+};
+
+IDE_Morph.prototype.scriptTabStops = function () {
+    // ALL navigable items: each script's top block (the overview header),
+    // then each of its blocks followed by that block's inputs
+    var result = [],
+        myself = this;
+    this.scriptList().forEach(top => {
+        result.push(top);
+        myself.scriptLines(top).forEach(line => {
+            if (line !== top) {
+                result.push(line);
+            }
+            myself.blockInputItems(line).forEach(item => result.push(item));
+        });
+    });
+    return result;
+};
+
+IDE_Morph.prototype.scriptItemIndexIn = function (list, item) {
+    // the item's position in a traversal list, mapping any morph (e.g. a raw
+    // click target or an untagged fresh block) to its nearest listed ancestor
+    var m = item,
+        idx;
+    while (m) {
+        idx = list.indexOf(m);
+        if (idx >= 0) {return idx; }
+        m = m.parent;
+    }
+    return -1;
+};
+
+IDE_Morph.prototype.scriptAllBlocks = function () {
+    var result = [],
+        myself = this;
+    this.scriptList().forEach(top => {
+        myself.scriptLines(top).forEach(b => result.push(b));
+    });
+    return result;
+};
+
+IDE_Morph.prototype.blockOfItem = function (item) {
+    var m = item;
+    while (m && !(m instanceof CommandBlockMorph)) {
+        m = m.parent;
+    }
+    // a standalone reporter script has no command block: use its top block
+    return m || this.scriptOfItem(item);
+};
+
+IDE_Morph.prototype.scriptOfItem = function (item) {
+    var m = item;
+    while (m && m.parent && !(m.parent.constructor &&
+            m.parent.constructor.name === 'ScriptsMorph')) {
+        m = m.parent;
+    }
+    return (m instanceof BlockMorph) ? m : null;
+};
+
+IDE_Morph.prototype.setAccessibleScripts = function () {
+    var scripts = this.spriteEditor && this.spriteEditor.contents,
+        myself = this;
+    if (!scripts || scripts.constructor.name !== 'ScriptsMorph') {return; }
+    if (!scripts.isAccessible) {
+        scripts.isAccessible = true;
+        // 'group' (rather than 'tree') so each script's header can be a
+        // 'region' landmark - that makes the scripts show up in the screen
+        // reader's rotor / landmark list. group still supports
+        // aria-activedescendant per ARIA 1.2.
+        scripts.ariaRole = 'group';
+        scripts.ariaTag = 'div';
+        scripts.a11yFocusMode = 'activedescendant';
+        // NOT excludeFromTabRing => the scripting area itself is a tab stop
+        scripts.a11yHandleKey = event => myself.handleScriptsAreaKey(event);
+        scripts.reactToFocus = function () { myself.scriptsReactToFocus(); };
+        scripts.a11yActiveTarget = function () {
+            return this._a11yCurrentItem || myself.spriteEditor; // ring the area
+        };
+        scripts.a11ySetActiveItem = function (item) {
+            myself.scriptsSetCurrentFromMorph(item);
+        };
+        scripts.createAccessibleElement();
+    }
+    this.updateScriptsLabel();
+    // tag the top blocks (script headers, as rotor-navigable regions), every
+    // block (as buttons) and every input (as textboxes), all flattened under
+    // the scripting-area element
+    this.scriptList().forEach((top, i) => {
+        myself.tagScriptItem(top, scripts, 'region',
+            localize('script') + ' ' + (i + 1) + ': ' +
+            myself.blockAccessibleLabel(top) + ', ' +
+            myself.scriptLines(top).length + ' ' + localize('blocks'));
+        myself.scriptLines(top).forEach(line => {
+            if (line !== top) {
+                myself.tagScriptItem(line, scripts, 'button',
+                    myself.blockAccessibleLabel(line));
+            }
+            myself.blockInputItems(line).forEach(item => {
+                if (item instanceof BlockMorph) {
+                    myself.tagScriptItem(item, scripts, 'button',
+                        myself.blockAccessibleLabel(item));
+                } else {
+                    myself.tagScriptItem(item, scripts, 'textbox',
+                        myself.argLabel(item));
+                }
+            });
+        });
+    });
+};
+
+IDE_Morph.prototype.scriptsSetCurrentFromMorph = function (morph) {
+    // map any morph inside the scripting area (a raw click target, a fresh
+    // untagged block, a keyboard-editing element) onto the nearest item of
+    // the traversal, tagging newly added blocks first
+    var list, idx;
+    this.setAccessibleScripts();
+    list = this.scriptTabStops();
+    idx = this.scriptItemIndexIn(list, morph);
+    this.scriptsSetCurrent(idx >= 0 ? list[idx] : null);
+};
+
+IDE_Morph.prototype.updateScriptsLabel = function () {
+    var scripts = this.spriteEditor && this.spriteEditor.contents,
+        n;
+    if (!scripts || !scripts.a11yElement) {return; }
+    n = this.scriptList().length;
+    scripts.setAriaLabel(localize('Scripting area') + ', ' + n + ' ' +
+        (n === 1 ? localize('script') : localize('scripts')));
+};
+
+IDE_Morph.prototype.tagScriptItem = function (morph, parent, role, label) {
+    if (morph._a11yScriptItem && morph.a11yIsTagged()) {
+        morph.setAriaLabel(label); // keep the label fresh
+        return;
+    }
+    morph.a11yElement = null;
+    morph.a11yId = null;
+    morph._a11yDomParentMorph = null;
+    morph._a11yScriptItem = true;
+    morph.isAccessible = true;
+    morph.ariaRole = role;
+    morph.ariaTag = 'div';
+    morph.excludeFromTabRing = true; // the scripting area is the tab stop
+    morph.a11yParentMorph = () => parent;
+    morph.setAriaLabel(label);
+    morph.createAccessibleElement();
+    morph.ensureA11yId();
+};
+
+IDE_Morph.prototype.scriptsReactToFocus = function () {
+    // entering the scripting area: outline the whole area, nothing selected yet
+    var scripts = this.spriteEditor.contents;
+    scripts._a11yCurrentItem = null;
+    scripts.setAria('aria-activedescendant', null);
+};
+
+IDE_Morph.prototype.scriptsSetCurrent = function (item) {
+    var scripts = this.spriteEditor.contents,
+        w = this.world();
+    scripts._a11yCurrentItem = item;
+    if (item && item.a11yElement) {
+        item.ensureA11yId();
+        scripts.setAria('aria-activedescendant', item.a11yId);
+        this.spriteEditor.scrollIntoView(item.bounds);
+    } else {
+        scripts.setAria('aria-activedescendant', null);
+    }
+    if (w) { w.updateFocusRing(w.lastInputWasKeyboard); }
+};
+
+IDE_Morph.prototype.handleScriptsAreaKey = function (event) {
+    var scripts = this.spriteEditor.contents,
+        cur = scripts._a11yCurrentItem,
+        list,
+        idx,
+        next,
+        curBlock,
+        top;
+    switch (event.keyCode) {
+    case 9: // Tab / Shift+Tab -> every item; leave at the boundaries
+        list = this.scriptTabStops();
+        if (!list.length) {return false; }
+        idx = this.scriptItemIndexIn(list, cur);
+        next = event.shiftKey ? idx - 1 : (idx < 0 ? 0 : idx + 1);
+        if (next < 0 || next >= list.length) {return false; } // let Tab leave
+        this.scriptsSetCurrent(list[next]);
+        return true;
+    case 39: // right
+    case 37: // left  -> same traversal, clamped inside the area
+        list = this.scriptTabStops();
+        if (!list.length) {return true; }
+        idx = this.scriptItemIndexIn(list, cur);
+        next = (event.keyCode === 39) ?
+            Math.min(list.length - 1, idx + 1) : Math.max(0, idx - 1);
+        this.scriptsSetCurrent(list[Math.max(0, next)]);
+        return true;
+    case 40: // down
+    case 38: // up  -> between blocks (lines)
+        list = this.scriptAllBlocks();
+        if (!list.length) {return true; }
+        curBlock = this.blockOfItem(cur);
+        idx = curBlock ? this.scriptItemIndexIn(list, curBlock) : -1;
+        next = (event.keyCode === 40) ?
+            Math.min(list.length - 1, idx + 1) : Math.max(0, idx - 1);
+        this.scriptsSetCurrent(list[Math.max(0, next)]);
+        return true;
+    case 13: // enter -> run; shift+enter -> keyboard editing at the block
+    case 32: // space -> run
+        if (event.keyCode === 13 && event.shiftKey) {
+            return this.startKeyboardEditing(cur);
+        }
+        top = this.scriptOfItem(cur) || this.scriptList()[0];
+        if (top) { top.mouseClickLeft(); }
+        return true;
+    default:
+        return false;
+    }
+};
+
+IDE_Morph.prototype.startKeyboardEditing = function (item) {
+    // bridge the a11y focus into Snap's built-in keyboard-editing mode
+    // (ScriptFocusMorph), starting at the currently focused block
+    var scripts = this.spriteEditor.contents,
+        world = this.world(),
+        block = item ? this.blockOfItem(item) : null;
+    if (!ScriptsMorph.prototype.enableKeyboard) {
+        if (world && world.announce) {
+            world.announce(localize('keyboard editing is turned off'));
+        }
+        return true;
+    }
+    if (block) {
+        block.focus(); // creates a ScriptFocusMorph at that block
+    } else {
+        scripts.edit(scripts.center()); // empty area: start a new script
+    }
+    // keyboard editing is driven through the hidden textarea - give it
+    // native focus so ScriptFocusMorph receives the keystrokes
+    if (world && world.keyboardHandler) {
+        world._a11ySyncingFocus = true;
+        try {
+            world.keyboardHandler.focus();
+        } catch (err) {
+            nop();
+        }
+        world._a11ySyncingFocus = false;
+    }
+    if (world && world.announce) {
+        world.announce(localize('keyboard editing') +
+            (block ? ': ' + this.blockAccessibleLabel(block) : ''));
+    }
+    return true;
+};
+
+// IDE_Morph accessibility - result / error announcements //////////////////
+// Clicking a reporter block or reaching the end of a script pops up a speech
+// bubble with the result; mirror that into the ARIA live region so the
+// screen reader reads the result out.
+
+IDE_Morph.prototype.resultAccessibleText = function (value, depth) {
+    // a spoken representation of a reporter result / bubble value, or null
+    // if we don't have one (the caller then stays silent; unknown values are
+    // re-shown by showBubble as display() strings, which announce themselves)
+    var list, items, texts, txt;
+    depth = depth || 0;
+    try {
+        if (isString(value)) {
+            return value.length ? value : localize('an empty text');
+        }
+        if (typeof value === 'boolean') {
+            return localize(value ? 'true' : 'false');
+        }
+        if (typeof value === 'number') {
+            return '' + value;
+        }
+        if (value instanceof List) { // a nested list inside a list result
+            list = value;
+        } else if (value instanceof ListWatcherMorph) {
+            list = value.list;
+        } else if (value instanceof TableFrameMorph) {
+            list = value.tableMorph ? value.tableMorph.table : null;
+        }
+        if (list instanceof List) {
+            items = list.itemsArray();
+            txt = localize('a list of') + ' ' + items.length + ' ' +
+                localize(items.length === 1 ? 'item' : 'items');
+            if (depth > 0 || !items.length) {
+                return txt; // don't read nested lists item by item
+            }
+            texts = items.slice(0, 20).map(item =>
+                this.resultAccessibleText(item, depth + 1) ||
+                    localize('an item'));
+            txt += ': ' + texts.join(', ');
+            if (items.length > 20) {
+                txt += ', ' + localize('and') + ' ' + (items.length - 20) +
+                    ' ' + localize('more');
+            }
+            return txt;
+        }
+        if (value instanceof Context) {
+            return localize('a script');
+        }
+        if (value instanceof Costume) {
+            return localize('a costume') + ' (' + value.name + ')';
+        }
+        if (value instanceof Sound) {
+            return localize('a sound') + ' (' + value.name + ')';
+        }
+        if (value instanceof Color) {
+            return localize('a color') + ' (' + value.toString() + ')';
+        }
+        if (isSnapObject(value)) {
+            return value instanceof StageMorph ?
+                localize('the stage')
+                : localize('the sprite') + ' ' + value.name;
+        }
+        if (value instanceof BlockMorph) {
+            return localize('the block') + ' ' +
+                this.blockAccessibleLabel(value);
+        }
+        if (value instanceof AlignmentMorph) { // an error bubble (errorBubble)
+            txt = detect(value.children, m => m instanceof TextMorph);
+            return txt ? txt.text : null;
+        }
+        if (value instanceof Morph) {
+            return localize('a picture');
+        }
+    } catch (err) {
+        return null; // never break the bubble over an announcement
+    }
+    return null;
+};
+
+(function () {
+    var orig = SyntaxElementMorph.prototype.showBubble;
+    SyntaxElementMorph.prototype.showBubble = function (
+        value,
+        exportPic,
+        target
+    ) {
+        var ret = orig.call(this, value, exportPic, target),
+            world = this.a11yWorld() ||
+                (target && target.world instanceof Function ?
+                    target.world() : null),
+            ide,
+            isError,
+            txt;
+        if (world && world.announce && world.accessibilityEnabled) {
+            ide = this.parentThatIsA(IDE_Morph) ||
+                (target && target.parentThatIsA ?
+                    target.parentThatIsA(IDE_Morph) : null);
+            txt = ide ? ide.resultAccessibleText(value) : null;
+            if (txt) {
+                isError = value instanceof AlignmentMorph;
+                world.announce(
+                    isError ? txt : localize('reports') + ' ' + txt,
+                    {assertive: isError}
+                );
+            }
+        }
+        return ret;
+    };
+}());
+
+// IDE_Morph accessibility - keyboard editing (ScriptFocusMorph) ////////////
+// Snap's built-in keyboard-editing mode navigates blocks with its own focus
+// (a blinking insertion mark). Mirror each move into the live region so the
+// screen reader follows along, and hand the AT focus back to the scripting
+// area when keyboard editing ends.
+
+IDE_Morph.prototype.scriptFocusAccessibleText = function (focus) {
+    // a spoken description of the keyboard-editing focus position
+    var el = focus.element,
+        txt;
+    if (!el) {return null; }
+    if (el instanceof ScriptsMorph) {
+        return localize('new script');
+    }
+    if (el instanceof CommandSlotMorph) {
+        txt = localize('empty command slot');
+    } else if (el instanceof MultiArgMorph) {
+        txt = localize('variadic input');
+    } else if (el instanceof BlockMorph) {
+        txt = this.blockAccessibleLabel(el);
+    } else {
+        txt = this.argLabel(el);
+    }
+    if (focus.atEnd) {
+        txt += ', ' + localize('at the end of the script');
+    }
+    return txt;
+};
+
+(function () {
+    var origFixLayout = ScriptFocusMorph.prototype.fixLayout,
+        origStopEditing = ScriptFocusMorph.prototype.stopEditing;
+
+    ScriptFocusMorph.prototype.fixLayout = function () {
+        var world, ide, txt, key;
+        origFixLayout.call(this);
+        world = this.editor ? this.editor.world() : null;
+        if (!world || !world.announce || !world.accessibilityEnabled) {
+            return;
+        }
+        ide = this.editor.parentThatIsA(IDE_Morph);
+        txt = ide ? ide.scriptFocusAccessibleText(this) : null;
+        // fixLayout also fires on repaints: only announce actual moves
+        key = (txt || '') + '|' + this.atEnd;
+        if (txt && key !== this._a11yLastAnnounced) {
+            this._a11yLastAnnounced = key;
+            world.announce(txt);
+        }
+    };
+
+    ScriptFocusMorph.prototype.stopEditing = function () {
+        var editor = this.editor,
+            element = this.element,
+            world = editor ? editor.world() : null,
+            ide;
+        origStopEditing.call(this);
+        if (!world || !world.accessibilityEnabled) {return; }
+        ide = editor && editor.parentThatIsA ?
+            editor.parentThatIsA(IDE_Morph) : null;
+        // when keyboard editing ends via the keyboard (Esc), hand the AT
+        // focus back to the scripting area at the last edited element
+        if (world.lastInputWasKeyboard && ide && editor.isAccessible &&
+                ide.spriteEditor && editor === ide.spriteEditor.contents) {
+            world.setFocus(editor, {force: true});
+            if (element && !(element instanceof ScriptsMorph)) {
+                ide.scriptsSetCurrentFromMorph(element);
+            }
+        }
+    };
+}());
+
+// IDE_Morph accessibility - block search pane //////////////////////////////
+// called from SpriteMorph.searchBlocks (objects.js) so the screen reader
+// reads the search results and the currently selected match
+
+IDE_Morph.prototype.announceSearchResults = function (blocks, selection) {
+    var world = this.world(),
+        txt;
+    if (!world || !world.announce) {return; }
+    txt = blocks.length + ' ' +
+        localize(blocks.length === 1 ? 'block found' : 'blocks found');
+    if (selection) {
+        txt += '. ' + this.blockAccessibleLabel(selection) + '. ' +
+            localize('press up or down to choose, enter to insert');
+    }
+    world.announce(txt);
+};
+
+IDE_Morph.prototype.announceBlockSelection = function (block) {
+    var world = this.world();
+    if (!world || !world.announce || !block) {return; }
+    world.announce(this.blockAccessibleLabel(block));
+};
+
+IDE_Morph.prototype.updateAccessibleLabel = function () {
+    // label the application entry point "Snap! - <project name>"
+    var world = this.world();
+    if (!world || !world.setAccessibleLabel) {return; }
+    world.setAccessibleLabel(
+        localize('Snap!') + ' - ' +
+            (this.getProjectName() || localize('untitled'))
+    );
 };
 
 // IDE_Morph project properties

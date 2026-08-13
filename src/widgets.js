@@ -670,6 +670,17 @@ ToggleButtonMorph.prototype.refresh = function () {
         }
     }
     this.rerender();
+    // accessibility: keep aria-pressed / aria-checked in sync with my state
+    if (this.a11yElement) {
+        if (this.a11yUsePressed) {
+            this.a11yElement.setAttribute(
+                'aria-pressed', this.state ? 'true' : 'false');
+        }
+        if (this.a11yUseChecked) {
+            this.a11yElement.setAttribute(
+                'aria-checked', this.state ? 'true' : 'false');
+        }
+    }
 };
 
 // ToggleButtonMorph layout:
@@ -1349,6 +1360,10 @@ ToggleMorph.prototype.refresh = function () {
             !this.toggleElement.isToggleLabel) {
         this.toggleElement.refresh();
     }
+    // accessibility: keep aria-checked in sync with my state
+    if (this.a11yElement && this.a11yUseChecked) {
+        this.a11yElement.setAttribute('aria-checked', this.state ? 'true' : 'false');
+    }
 };
 
 // ToggleMorph events
@@ -1582,7 +1597,6 @@ DialogBoxMorph.uber = Morph.prototype;
 
 // DialogBoxMorph preferences settings:
 
-DialogBoxMorph.prototype.trapsFocus = true; // keep tab navigation inside
 DialogBoxMorph.prototype.fontSize = 12;
 DialogBoxMorph.prototype.titleFontSize = 14;
 DialogBoxMorph.prototype.fontStyle = 'sans-serif';

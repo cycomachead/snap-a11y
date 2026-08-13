@@ -5093,6 +5093,9 @@ SpriteMorph.prototype.searchBlocks = function (
         });
         showSelection();
         searchPane.changed();
+        if (ide.announceSearchResults) { // accessibility: read the results
+            ide.announceSearchResults(blocks, selection);
+        }
     }
 
     searchPane.owner = this;
@@ -5140,6 +5143,9 @@ SpriteMorph.prototype.searchBlocks = function (
             }
             selection = blocksList[idx];
             showSelection();
+            if (ide.announceBlockSelection) { // accessibility
+                ide.announceBlockSelection(selection);
+            }
             return;
         case 40: // down arrow
             if (!scriptFocus || !selection) {return; }
@@ -5149,6 +5155,9 @@ SpriteMorph.prototype.searchBlocks = function (
             }
             selection = blocksList[idx];
             showSelection();
+            if (ide.announceBlockSelection) { // accessibility
+                ide.announceBlockSelection(selection);
+            }
             return;
         default:
             nop();

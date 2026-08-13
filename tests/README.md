@@ -8,7 +8,7 @@ automated — instead these tests verify the layers that determine them:
 - **Roles & labels** — `getByRole` queries against the parallel DOM
   (`20-landmarks`, `30-labels`).
 - **Focus** — where real DOM focus is, how it moves, dialog trapping and
-  restoration (`40-focus`).
+  restoration (`40-focus`, `45-dialogs`).
 - **Keyboard behavior** — keystrokes in, Morphic state out, asserted via
   `page.evaluate` into the live `world` (`50-keyboard`).
 - **Accessibility tree** — full Chromium AX-tree dumps over CDP and
@@ -45,7 +45,8 @@ npm run report                    # open the HTML report
 | `specs/10-document.spec.js` | passing | host-page semantics (lang, title, named keyboard textarea) |
 | `specs/20-landmarks.spec.js` | `fixme` | Phase 1 spec: overlay root, landmarks, live regions |
 | `specs/30-labels.spec.js` | `fixme` | Phases 1/3 spec: accessible names, speakable block labels |
-| `specs/40-focus.spec.js` | mixed | baseline focus reality + Phase 2 spec: focus sync, dialogs |
+| `specs/40-focus.spec.js` | mixed | baseline focus reality + Phase 2 spec: focus sync, dialogs (dialog focus / trap tests are active) |
+| `specs/45-dialogs.spec.js` | passing | Phase 4: dialogs as ARIA modals — tab stops, list views navigated with the arrow keys, focus trap + return (Import library, Open / Save project) |
 | `specs/50-keyboard.spec.js` | mixed | baseline: today's keyboard script editing; spec: full-IDE keyboard |
 | `specs/60-aria-snapshot.spec.js` | mixed | baseline: AX tree is ~empty today; spec: target tree shape |
 | `specs/70-axe.spec.js` | passing | WCAG scan with an explicit known-failures allowlist |

@@ -41,6 +41,42 @@ function snapEval(page, fn, arg) {
 }
 
 /**
+ * Close every dialog that is open, e.g. the "CAUTION! Development Version"
+ * warning Snap! shows at startup (which is modal, so it traps focus).
+ */
+async function dismissDialogs(page) {
+    await page.evaluate(() => {
+        world.children
+            .filter(m => m instanceof DialogBoxMorph)
+            .forEach(dialog => dialog.destroy());
+    });
+}
+
+/**
+ * What assistive technology currently sees at the focus: the focused
+ * element's role / name, the label of its aria-activedescendant (composite
+ * widgets such as list boxes keep DOM focus on themselves), and which morph
+ * Morphic thinks is focused.
+ */
+function focusInfo(page) {
+    return page.evaluate(() => {
+        const el = document.activeElement,
+            active = el.getAttribute('aria-activedescendant'),
+            item = active && document.getElementById(active);
+        return {
+            id: el.id,
+            role: el.getAttribute('role'),
+            name: el.getAttribute('aria-label'),
+            item: item ? item.getAttribute('aria-label') : null,
+            morph: world.focusedMorph ? world.focusedMorph.constructor.name
+                : null,
+            inDialog: [...document.querySelectorAll('[role="dialog"]')]
+                .some(d => d.contains(el))
+        };
+    });
+}
+
+/**
  * Dump the full Chromium accessibility tree (CDP) as a flat list of
  * { role, name, ignored } nodes. Lets tests inspect what assistive
  * technology actually receives, beyond what DOM queries show.
@@ -87,6 +123,8 @@ async function focusMorphicKeyboard(page) {
 module.exports = {
     loadSnap,
     snapEval,
+    dismissDialogs,
+    focusInfo,
     getAXTree,
     getExposedAXNodes,
     focusMorphicKeyboard

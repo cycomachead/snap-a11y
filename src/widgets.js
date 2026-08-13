@@ -2907,6 +2907,10 @@ DialogBoxMorph.prototype.fixLayout = function () {
     // refresh a shallow shadow
     this.removeShadow();
     this.addShadow();
+
+    // accessibility: keep my roles / names in sync with my contents (cheap
+    // and idempotent; a no-op until I'm in an accessible world)
+    this.setAccessibleContents();
 };
 
 // DialogBoxMorph keyboard events
@@ -2927,6 +2931,313 @@ DialogBoxMorph.prototype.processKeyDown = function (event) {
         // this.inspectKeyEvent(event);
     }
 };
+
+// DialogBoxMorph accessibility ///////////////////////////////////////
+
+/*
+    Every dialog is an ARIA modal dialog: role="dialog" + aria-modal, named
+    by its title and described by its message text, with a real focus trap
+    (world.focusableMorphs() is scoped to the open dialog) and focus handed
+    back to whatever opened it when it closes.
+
+    Tab / Shift+Tab step through my tab stops - input fields, list boxes,
+    buttons - in reading order. a11yTabStops() is the hook where an heir
+    declares its own order and labels; see ProjectDialogMorph and
+    LibraryImportDialogMorph in gui.js.
+
+    Snap opens most dialogs by editing their first input field, so tabbing
+    OUT of a field arrives through Morphic's own text-field tabbing
+    (CursorMorph -> Morph.tab() -> the owner chain's nextTab); nextTab /
+    previousTab below hand that over to the accessible tab ring, which is
+    exactly the "fine-grained tabbing cycle at the dialog level" morphic.js
+    suggests.
+*/
+
+DialogBoxMorph.prototype.isAccessible = true;
+DialogBoxMorph.prototype.ariaRole = 'dialog';
+DialogBoxMorph.prototype.ariaTag = 'div';
+DialogBoxMorph.prototype.excludeFromTabRing = true; // a container, not a stop
+DialogBoxMorph.prototype.a11yTrapsFocus = true;     // Tab stays inside me
+
+DialogBoxMorph.prototype.ariaLabel = function () {
+    if (this._ariaLabel) {
+        return this._ariaLabel;
+    }
+    if (typeof this.labelString === 'string' && this.labelString.length) {
+        return localize(this.labelString);
+    }
+    if (this.label && typeof this.label.text === 'string') {
+        return this.label.text;
+    }
+    return localize('dialog');
+};
+
+DialogBoxMorph.prototype.a11yDescription = function () {
+    // my message text, if I have one (inform / ask dialogs)
+    if ((this.body instanceof TextMorph || this.body instanceof StringMorph) &&
+            typeof this.body.text === 'string') {
+        return this.body.text.replace(/[\n\r]+/g, ' ');
+    }
+    return null;
+};
+
+DialogBoxMorph.prototype.updateAccessibleElement = function () {
+    var description;
+    Morph.prototype.updateAccessibleElement.call(this);
+    if (!this.a11yElement) {return; }
+    this.a11yElement.setAttribute('aria-modal', 'true');
+    description = this.a11yDescription();
+    if (description) {
+        this.a11yElement.setAttribute('aria-description', description);
+    }
+};
+
+DialogBoxMorph.prototype.setAccessibleContents = function () {
+    // create my dialog element and tag my current contents. Idempotent and
+    // cheap: safe to re-run whenever my contents change
+    var world = this.a11yWorld();
+    if (!world || !world.accessibilityEnabled) {return; }
+    if (!this.a11yElement) {
+        this.createAccessibleElement();
+    }
+    this.updateAccessibleElement();
+    this.a11yTabStops(); // tags every stop it finds
+};
+
+// DialogBoxMorph accessibility - tab stops
+
+DialogBoxMorph.prototype.a11yFocusableMorphs = function () {
+    // the focus trap asks me for my stops instead of walking the world
+    return this.a11yTabStops();
+};
+
+DialogBoxMorph.prototype.a11yTabStops = function () {
+    // every control inside me, tagged and ordered by screen position.
+    // Heirs with a layout that reading order doesn't capture override this
+    // (and use a11yStops() to build their own list)
+    var stops = [],
+        myself = this;
+
+    function collect(morph) {
+        if (!morph.isVisible || morph.a11yIgnore) {return; }
+        if (myself.tagAccessibleStop(morph)) {
+            stops.push(morph); // a stop owns whatever is inside it
+            return;
+        }
+        morph.children.forEach(collect);
+    }
+
+    this.children.forEach(collect);
+    return stops.sort((a, b) => a.a11yOrderKey() - b.a11yOrderKey());
+};
+
+DialogBoxMorph.prototype.a11yStops = function (specs) {
+    // build an explicit, ordered list of stops from [morph, label, role]
+    // triples, skipping the ones that aren't there (or aren't shown). The
+    // role is optional: without one the morph's class decides (see
+    // tagAccessibleStop), with one the morph is tagged as given - used for
+    // panes that have no widget class of their own, e.g. a notes field
+    var stops = [];
+    specs.forEach(spec => {
+        var morph = spec[0],
+            label = spec[1],
+            role = spec[2];
+        if (!morph || !morph.isVisible || morph.a11yIgnore) {return; }
+        if (label) {
+            morph.a11yLabelString = label;
+        }
+        if (role ? this.tagAccessible(morph, role, label || 'group')
+                : this.tagAccessibleStop(morph)) {
+            stops.push(morph);
+        }
+    });
+    return stops;
+};
+
+DialogBoxMorph.prototype.tagAccessibleStop = function (morph) {
+    // tag a single control as an accessible tab stop, answering whether it
+    // is one. Note the class order: ToggleMorph and ToggleButtonMorph both
+    // inherit from PushButtonMorph
+    var label = morph.a11yLabelString;
+    if (morph instanceof ToggleMorph) {
+        label = label || morph.captionString ||
+            (typeof morph.labelString === 'string' ? morph.labelString : null);
+        return this.tagAccessible(morph, 'checkbox', label || 'toggle',
+            {checked: true});
+    }
+    if (morph instanceof ToggleButtonMorph) { // incl. TabMorph
+        label = label || morph.hint ||
+            (typeof morph.labelString === 'string' ? morph.labelString : null);
+        if (!label) {return false; } // never announce a bare "button"
+        return this.tagAccessible(morph, 'button', label,
+            {tag: 'button', pressed: true});
+    }
+    if (morph instanceof PushButtonMorph) {
+        label = label ||
+            (typeof morph.labelString === 'string' ? morph.labelString : null)
+            || morph.hint;
+        if (!label) {return false; }
+        return this.tagAccessible(morph, 'button', label, {tag: 'button'});
+    }
+    if (morph instanceof InputFieldMorph) {
+        // an unnamed field in a prompt dialog is named by the dialog's own
+        // title ("Rename sprite"), which is what the title asks for
+        return this.tagAccessibleTextField(morph,
+            label || (this.labelString ? this.ariaLabel() : 'input'));
+    }
+    if (morph instanceof ListMorph) {
+        return this.tagAccessible(morph, 'listbox', label || 'list');
+    }
+    if ((morph instanceof TextMorph || morph instanceof StringMorph) &&
+            morph.isEditable) {
+        return this.tagAccessibleTextField(morph, label || 'text');
+    }
+    return false;
+};
+
+DialogBoxMorph.prototype.tagAccessible = function (morph, role, label, opts) {
+    // give a control a role, an accessible name and a parallel DOM node
+    var options = opts || {};
+    if (!morph || morph.a11yIgnore) {return false; }
+    morph.isAccessible = true;
+    morph.ariaRole = role;
+    morph.ariaTag = options.tag || 'div';
+    if (options.pressed) {
+        morph.a11yUsePressed = true; // ToggleButtonMorph.refresh keeps it fresh
+    }
+    if (options.checked) {
+        morph.a11yUseChecked = true;
+    }
+    // button labels are padded with spaces for the layout ("  OK  ")
+    morph.setAriaLabel(
+        localize(('' + label).trim()).replace(/[\n\r]+/g, ' ').trim());
+    if (!morph.a11yElement) {
+        morph.createAccessibleElement();
+    }
+    if (morph.a11yElement) {
+        if (options.pressed) {
+            morph.a11yElement.setAttribute(
+                'aria-pressed', morph.state ? 'true' : 'false');
+        }
+        if (options.checked) {
+            morph.a11yElement.setAttribute(
+                'aria-checked', morph.state ? 'true' : 'false');
+        }
+    }
+    return true;
+};
+
+DialogBoxMorph.prototype.tagAccessibleTextField = function (morph, label) {
+    // a text field is one tab stop that starts Morphic's text editing when
+    // it receives focus, so the user can type straight away (native focus
+    // then sits on the hidden textarea, labelled with this field's name)
+    var isReadOnly = morph.isReadOnly ||
+        (morph.isEditable === false && !(morph instanceof InputFieldMorph));
+    this.tagAccessible(morph, 'textbox', label);
+    if (morph.a11yElement) {
+        morph.a11yElement.setAttribute(
+            'aria-readonly', isReadOnly ? 'true' : 'false');
+        if (morph instanceof TextMorph) {
+            morph.a11yElement.setAttribute('aria-multiline', 'true');
+        }
+    }
+    if (!morph._a11yEditsOnFocus) {
+        morph._a11yEditsOnFocus = true;
+        morph.reactToFocus = function () {
+            var world = this.a11yWorld();
+            if (world && world.setAccessibleEditingLabel) {
+                world.setAccessibleEditingLabel(this.ariaLabel());
+                world.announce(this.ariaLabel());
+            }
+            if (this.isReadOnly) {return; }
+            this.edit();
+        };
+    }
+    return true;
+};
+
+// DialogBoxMorph accessibility - keyboard
+
+DialogBoxMorph.prototype.a11yHandleTrapKey = function (event, focused) {
+    // the keys my focused control didn't want: Escape cancels, Enter
+    // accepts - the same contract as processKeyDown, but reached when a
+    // parallel DOM element (rather than the hidden textarea) has focus
+    if (event.key === 'Escape') {
+        this.cancel(); // same as processKeyDown, incl. for "nag" boxes
+        return true;
+    }
+    if (event.key === 'Enter') {
+        if (focused && focused !== this &&
+                (focused.ariaTag === 'button' || focused.a11yHandleKey)) {
+            return false; // a button / list box activates itself
+        }
+        this.ok();
+        return true;
+    }
+    return false;
+};
+
+DialogBoxMorph.prototype.nextTab = function (editField) {
+    this.a11yTabFromField(editField, 1);
+};
+
+DialogBoxMorph.prototype.previousTab = function (editField) {
+    this.a11yTabFromField(editField, -1);
+};
+
+DialogBoxMorph.prototype.a11yTabFromField = function (editField, direction) {
+    // Tab was pressed while one of my text fields was being edited: move on
+    // to the next accessible stop (which ends the edit), wrapping around
+    var world = this.a11yWorld(),
+        stops = (world && world.accessibilityEnabled) ?
+            world.focusableMorphs() : [],
+        current,
+        next;
+
+    if (!stops.length) { // accessibility off: plain Morphic field cycling
+        next = direction > 0 ? this.nextEntryField(editField)
+            : this.previousEntryField(editField);
+        if (next) {
+            editField.clearSelection();
+            next.selectAll();
+            next.edit();
+        }
+        return;
+    }
+    current = world.a11yEnclosingStop(stops, editField);
+    next = stops[stops.indexOf(current) + direction];
+    if (!next) {
+        next = direction > 0 ? stops[0] : stops[stops.length - 1];
+    }
+    world.setFocus(next, {viaKeyboard: true});
+};
+
+// DialogBoxMorph accessibility - opening and closing
+
+(function () {
+    var origPopUp = DialogBoxMorph.prototype.popUp,
+        origDestroy = DialogBoxMorph.prototype.destroy;
+
+    DialogBoxMorph.prototype.popUp = function (world, noFocus) {
+        // remember who had focus BEFORE Snap starts editing my first field
+        var previousFocus = world ? world.focusedMorph : null;
+        origPopUp.call(this, world, noFocus);
+        if (!world || !world.accessibilityEnabled) {return; }
+        this.setAccessibleContents();
+        if (!noFocus) {
+            world.a11yEnterModal(this, previousFocus);
+        }
+    };
+
+    DialogBoxMorph.prototype.destroy = function () {
+        var world = this.a11yWorld(),
+            focused = world ? world.focusedMorph : null;
+        origDestroy.call(this);
+        if (world && world.accessibilityEnabled) {
+            world.a11yLeaveModal(this, focused);
+        }
+    };
+}());
 
 // DialogBoxMorph drawing
 

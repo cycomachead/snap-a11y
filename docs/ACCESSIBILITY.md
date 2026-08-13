@@ -112,7 +112,9 @@ first, then in tests, then in implementation.
 | Stage | `[role="region"][aria-label="Stage"]` |
 | Editor view tabs | `[role="tablist"][aria-label="Editor views"]` with tabs Scripts / Costumes / Sounds |
 | Sprite corral | `[role="tablist"][aria-label="Sprites"]`, one `[role="tab"]` per sprite plus the stage |
-| Dialogs | `[role="dialog"][aria-modal="true"]` labeled by the dialog title; real DOM focus trap; focus restored on close |
+| Dialogs | `[role="dialog"][aria-modal="true"]` labeled by the dialog title (message text as `aria-description`); real DOM focus trap; focus restored on close; Tab moves between the dialog's search field, list views and buttons, Esc cancels, Enter accepts |
+| List views (project / library / block lists) | `[role="listbox"]` named with its purpose and item count ("Libraries, 64 items"); each item a `[role="option"]` with `aria-setsize` / `aria-posinset` / `aria-selected`; one tab stop, navigated with up / down (+ Home / End), `aria-activedescendant` follows the selection, Enter runs the list's default action |
+| Text fields in dialogs | `[role="textbox"]` named by its label; focusing it starts Morphic's text editing, so the hidden textarea that receives the typing is renamed after the field |
 | Menus (incl. context menus) | `[role="menu"]` with `[role="menuitem"]` children, named |
 
 **Speakable block labels**: derived from the block spec with input values
@@ -189,6 +191,9 @@ Each phase "turns on" a set of currently-skipped spec tests
   `30-labels`, `60-aria-snapshot`.
 - **Phase 4 — Dialogs, menus, announcements.** ARIA dialogs with focus
   traps, ARIA menus, live-region announcements for the events in §3.6.
+  Dialogs (`DialogBoxMorph` and heirs, incl. Import library and Open /
+  Save project) and list views (`ListMorph`) are done — see
+  `45-dialogs` and the dialog tests in `40-focus`.
 - **Phase 5 — Real-user validation & polish.** Screen reader user testing
   (NVDA, JAWS, VoiceOver), performance on large projects, fix rounds,
   begin upstream conversation.

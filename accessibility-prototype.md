@@ -36,6 +36,12 @@ we hit, and the prioritized TODO list. Read it before touching the code.
   the next script; Tab exits past the last input). **Up/Down** move between blocks. **Left/Right**
   do the same as Tab but clamped. Enter runs the current script. The current block/input is
   ring-highlighted.
+- **Dialogs** — every `DialogBoxMorph` is an ARIA modal dialog (title + message read out,
+  `aria-modal`, real focus trap, focus returned to the opener on close). Tab moves between a
+  dialog's search field, its list views and every button; Esc cancels, Enter accepts. The
+  **Import library** and **Open / Save project** dialogs declare their own tab order and names.
+- **List views** — `ListMorph` (project, library, block lists, the inspector) is a listbox: one
+  tab stop, up/down + Home/End, selection follows focus, Enter runs the default action.
 - **No Snap! regression** — the layer is inert until a morph opts in; the full IDE works; the
   2048 demo project loads and its scripts are readable.
 
@@ -143,10 +149,10 @@ area tree**.
 
 | File | Role |
 |---|---|
-| `src/accessibility.js` | **NEW.** The whole additive a11y layer: Morph ARIA API + element lifecycle, `WorldMorph` focus manager (`initAccessibility`, `setFocus`, `setFocusFromDOM`, `focusFromClick`, `focusableMorphs`, `handleA11yKeydown`, `updateFocusRing`, `setAccessibleLabel`), `FocusIndicatorMorph`, and the `MenuMorph`/`MenuItemMorph` accessibility methods. Also the `A11yBlockTemplateLabels` map. |
+| `src/accessibility.js` | **NEW.** The whole additive a11y layer: Morph ARIA API + element lifecycle, `WorldMorph` focus manager (`initAccessibility`, `setFocus`, `setFocusFromDOM`, `focusFromClick`, `focusableMorphs`, `handleA11yKeydown`, `updateFocusRing`, `setAccessibleLabel`), the modal focus trap (`a11yFocusRoot`, `a11yEnterModal`, `a11yLeaveModal`), `FocusIndicatorMorph`, and the `MenuMorph`/`MenuItemMorph` + `ListMorph` accessibility methods. Also the `A11yBlockTemplateLabels` map. |
 | `src/morphic.js` | A handful of **guarded** source hooks (see below). All additive — `git diff` is insertions only except `snap.html` version bumps. |
-| `src/widgets.js` | `ToggleButtonMorph.refresh` + `ToggleMorph.refresh` hooks → keep `aria-pressed`/`aria-checked` in sync (gated on `a11yUsePressed`/`a11yUseChecked`). |
-| `src/gui.js` | All Snap-IDE wiring: landmark regions, entry-point label, toolbar/corral buttons, category radiogroup, palette listbox, scripting-area editor navigation. (`IDE_Morph.prototype.*`.) |
+| `src/widgets.js` | `ToggleButtonMorph.refresh` + `ToggleMorph.refresh` hooks → keep `aria-pressed`/`aria-checked` in sync (gated on `a11yUsePressed`/`a11yUseChecked`). Plus the **DialogBoxMorph accessibility** section: `role=dialog`, tab stops, `nextTab`/`previousTab`, Esc/Enter, focus trap + return. |
+| `src/gui.js` | All Snap-IDE wiring: landmark regions, entry-point label, toolbar/corral buttons, category radiogroup, palette listbox, scripting-area editor navigation, and the tab order + labels of the Open/Save (`ProjectDialogMorph`) and Import library (`LibraryImportDialogMorph`) dialogs. (`IDE_Morph.prototype.*`.) |
 | `snap.html` | Adds `<script src="src/accessibility.js?...">` right after `morphic.js`; bumped version stamps for edited files. |
 | `morphic-a11y-demo.html` | **NEW.** Standalone core-layer test harness (morphic.js + accessibility.js only). |
 | `2048.xml` | Demo project (copied from the Desktop) for testing the scripting area. |
@@ -233,6 +239,48 @@ prototype is in `docs/ACCESSIBILITY.md`.
   lines in DFS order (incl. nested C-slot blocks); `HatBlockMorph` IS a `CommandBlockMorph`;
   C-slots are `CSlotMorph` with `.nestedBlock()`; reporters in slots are args.
 
+### Dialogs (`DialogBoxMorph` + heirs — widgets.js, gui.js)
+- **Every** dialog is an ARIA modal: `role=dialog`, `aria-modal=true`, `aria-label` = its
+  title, `aria-description` = its message text (inform / ask boxes). Set on the prototype, so
+  heirs (project, library, block, prompt … dialogs) get it for free.
+- **Focus trap.** `a11yTrapsFocus` marks a morph modal; `world.a11yFocusRoot()` answers the
+  topmost one and `focusableMorphs()` then returns only ITS stops, wrapping around at both ends
+  — Tab can't reach the IDE behind the dialog. `world.a11yEnterModal/a11yLeaveModal` remember
+  the opener and hand focus back when the dialog closes (nested dialogs restore to the dialog
+  underneath, mapping a morph that has no element of its own — e.g. the string morph of a field
+  being edited — onto its enclosing tab stop).
+- **Tab stops.** `a11yTabStops()` walks the dialog and tags what it finds (buttons, toggles,
+  input fields, list boxes, editable text), ordered by screen position; heirs override it to
+  declare an explicit order + names via `a11yStops([[morph, label, role?], …])`. It re-runs from
+  `fixLayout` and on every Tab, so labels and counts stay fresh as contents change.
+- **Text fields** are one stop each. Focusing one starts Morphic's editing (so typing works
+  immediately, and Enter/Esc keep their meaning) — native focus then sits on the hidden
+  textarea, which is renamed after the field (`world.setAccessibleEditingLabel`). Tabbing out of
+  a field arrives through Morphic's own text tabbing (`CursorMorph` → `Morph.tab` → the owner
+  chain), which `DialogBoxMorph.nextTab/previousTab` hand back to the accessible ring — morphic
+  explicitly suggests this "fine-grained tabbing cycle at the dialog level".
+- **Keys.** Esc cancels, Enter accepts (`a11yHandleTrapKey`), unless the focused control wants
+  the key itself (a `<button>` activates natively, a list box runs its default action).
+
+### List views (`ListMorph` — accessibility.js)
+- `ListMorph` is a `role=listbox` composite: ONE tab stop, up/down (+ Home/End) move,
+  `aria-activedescendant` follows, Enter runs the item's double-click action (i.e. the dialog's
+  default: open the project, import the library), Space just selects.
+- **Selection follows focus**, exactly as clicking does: arrowing calls the item's `trigger()`,
+  so the surrounding dialog updates its notes / preview / thumbnail as it would for the mouse.
+  Because some dialogs re-`edit()` their input field in that action, the handler re-asserts
+  focus on the list afterwards.
+- A `ListMorph` builds its items as `MenuItemMorph`s of an internal `MenuMorph`. That menu is
+  **not** exposed (it would read as a nested ARIA menu), so `buildListContents` is wrapped to
+  build the items with the menu accessibility switched off and then re-tag them as `role=option`
+  (with `aria-setsize`/`aria-posinset`/`aria-selected`) directly under the listbox element.
+- Scrolling moves children with `silentMoveBy()`, which does **not** fire `changed()` per child,
+  so the composites call `syncAccessibleGeometryTree()` after `scrollIntoView()` to re-glue the
+  parallel nodes (otherwise items stay at stale positions / stay `aria-hidden`).
+- The Import library dialog's **block preview** is the same pattern hand-rolled on its
+  `ScrollFrameMorph` (the blocks there are pictures, so `displayBlocks` stores each block's
+  spoken name as `a11yLabelString`).
+
 ---
 
 ## 5. Gotchas / lessons learned (read before extending)
@@ -315,10 +363,29 @@ Claude Code session transcripts, and re-verified programmatically in Chrome on t
   **pick up** a block and move it with the arrow keys (grab → move → drop, with announcements).
   Review the **APG guidance on keyboard drag-and-drop** patterns before designing this.
 
+### DONE 2026-08-13 — dialogs + list views (Playwright-verified in Chrome)
+- **Dialog boxes** (`DialogBoxMorph` and every heir): `role=dialog` + `aria-modal`, title and
+  message read out, real focus trap, focus returned to the opener on close, Tab through the
+  stops, Esc/Enter. See §4 "Dialogs".
+- **Import library dialog**: Tab = search field → libraries list → block preview → description →
+  Import → Cancel; up/down through both list views; each library announced with its description
+  and its blocks by name.
+- **Open / Save project dialogs**: Tab = name / search field → source buttons (Cloud, Examples,
+  Browser, Computer) → project list → notes → action buttons; up/down through the list, which
+  announces each project and reads its notes; Enter opens (Save's name + notes fields are
+  editable from the keyboard).
+- **All other `ListMorph` list views** (block import, project recovery, the inspector, …) get
+  the same listbox behaviour from the generic layer.
+- Tests: `tests/specs/45-dialogs.spec.js`, plus the now-active dialog tests in `40-focus`.
+- Fixed on the way: `focusin`/`focusout` BUBBLE, so a screen-reader-driven (DOM-initiated) focus
+  on a button used to be reported as its enclosing landmark region — the listeners now ignore
+  events fired by a descendant.
+
 ### Medium term
-- **Dialog boxes** (`DialogBoxMorph` and heirs) must work with the screen reader — most
-  importantly: tabbing through the inputs, reading the title, `role=dialog`, focus trap +
-  focus return on close.
+- **Dialogs, remaining gaps:** the numeric-slider dialogs (`SliderMorph` needs `role=slider` +
+  `aria-valuenow`), the project preview thumbnail (an unlabelled image), the block editor's
+  scripting area (it is a dialog, so its buttons tab, but its scripts aren't navigable yet),
+  and announcing "N projects" when a source finishes loading.
 - **Sprite control bar** (the tab/toolbar row above the scripting area) still needs tagging.
 - **Global tab order** (target): Toolbar → Category selector → Palette → Sprite control bar →
   Scripting area → Corral controls → Corral → left (palette) resize handle → right (stage)

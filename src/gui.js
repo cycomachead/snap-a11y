@@ -11528,6 +11528,9 @@ ProjectDialogMorph.prototype.addSourceButton = function (
     button.padding = this.buttonPadding;
     button.contrast = this.buttonContrast;
     button.pressColor = this.titleBarColor.darker(20);
+    // accessibility: the button's label is a pre-rendered image, so keep the
+    // string around as its accessible name
+    button.a11yLabelString = label;
     button.fixLayout();
     button.refresh();
     this.srcBar.add(button);
@@ -12218,6 +12221,43 @@ ProjectDialogMorph.prototype.edit = function () {
     }
 };
 
+// ProjectDialogMorph accessibility
+// Tab order: the name / search field, the source buttons (Cloud, Examples,
+// Browser, Computer), the project list, the notes, then the action buttons.
+// Up / down arrows move through the list, which announces each project and
+// updates the notes / preview as it goes.
+
+ProjectDialogMorph.prototype.a11yTabStops = function () {
+    var specs = [
+        [this.nameField, 'Project name'],
+        [this.filterField, 'Search projects']
+    ];
+    this.srcBar.children.forEach(button => {
+        if (button instanceof ToggleButtonMorph) {
+            specs.push([button, button.a11yLabelString || 'Source']);
+        }
+    });
+    specs.push([this.listField, 'Projects']);
+    specs.push(this.a11yNotesStop());
+    this.buttons.topRow.children.forEach(button => specs.push([button]));
+    this.buttons.bottomRow.children.forEach(button => specs.push([button]));
+    return this.a11yStops(specs);
+};
+
+ProjectDialogMorph.prototype.a11yNotesStop = function () {
+    // the notes are editable when saving, read-only (but still worth
+    // reading out) when opening
+    var text = (this.notesText && this.notesText.text) || '';
+    if (this.notesText && this.notesText.isEditable) {
+        return [this.notesText, 'Project notes'];
+    }
+    return [
+        this.notesField,
+        localize('Notes') + ': ' + (text.length ? text : localize('none')),
+        'group'
+    ];
+};
+
 // ProjectDialogMorph layout
 
 ProjectDialogMorph.prototype.fixLayout = function () {
@@ -12557,6 +12597,10 @@ ProjectRecoveryDialogMorph.prototype.fixLayout = function () {
     // refresh shadow
     this.removeShadow();
     this.addShadow();
+
+    // accessibility: my list, my notes and my buttons all change as the user
+    // switches sources - re-tag them (idempotent)
+    this.setAccessibleContents();
 };
 
 // LibraryImportDialogMorph ///////////////////////////////////////////
@@ -12883,6 +12927,127 @@ LibraryImportDialogMorph.prototype.fixLayout = function () {
 
     this.removeShadow();
     this.addShadow();
+
+    // accessibility: the list and the block preview are rebuilt whenever the
+    // filter or the selection changes - re-tag them (idempotent)
+    this.setAccessibleContents();
+};
+
+// LibraryImportDialogMorph accessibility
+// Tab order: the search field, the library list, the preview of the
+// library's blocks, its description, then Import / Cancel. Up and down
+// arrows move through the library list (announcing each library and
+// loading its preview) and through the previewed blocks.
+
+LibraryImportDialogMorph.prototype.a11yTabStops = function () {
+    var description = (this.notesText && this.notesText.text) || '';
+    this.setAccessiblePalette();
+    return this.a11yStops([
+        [this.filterField, 'Search libraries'],
+        [this.listField, 'Libraries'],
+        [this.palette, this.a11yPaletteLabel(), 'listbox'],
+        [
+            this.notesField,
+            localize('Description') + ': ' +
+                (description.length ? description : localize('none')),
+            'group'
+        ],
+        [this.buttons.children[0]],
+        [this.buttons.children[1]]
+    ]);
+};
+
+LibraryImportDialogMorph.prototype.a11yPaletteBlocks = function () {
+    // the previewed blocks - labelled when they were rendered (displayBlocks)
+    return this.palette ?
+        this.palette.contents.children.filter(m => m.a11yLabelString) : [];
+};
+
+LibraryImportDialogMorph.prototype.a11yPaletteLabel = function () {
+    var n = this.a11yPaletteBlocks().length;
+    return localize('Library blocks') + ', ' + n + ' ' +
+        localize(n === 1 ? 'block' : 'blocks');
+};
+
+LibraryImportDialogMorph.prototype.setAccessiblePalette = function () {
+    // the preview of a library's blocks is a listbox: ONE tab stop, with up
+    // and down moving through the blocks. The palette morph is rebuilt for
+    // every library, so this (re)wires whichever one is current
+    var myself = this,
+        palette = this.palette;
+    if (!palette) {return; }
+    if (!palette._a11yIsListbox) {
+        palette._a11yIsListbox = true;
+        palette.a11yFocusMode = 'activedescendant';
+        palette.a11yHandleKey = event => myself.handleLibraryPaletteKey(event);
+        palette.a11yActiveTarget = function () {
+            return this._a11yCurrentBlock || this;
+        };
+        palette.reactToFocus = function () {
+            this._a11yCurrentBlock = null; // outline the whole preview first
+            this.setAria('aria-activedescendant', null);
+        };
+        palette.a11ySetActiveItem = function (item) {
+            var m = item;
+            while (m && m.parent !== this.contents) {
+                m = m.parent;
+            }
+            if (m && m.a11yLabelString) {
+                myself.setAccessibleLibraryBlock(m);
+            }
+        };
+    }
+    // tag the preview itself first, so the blocks nest inside it
+    this.tagAccessible(palette, 'listbox', this.a11yPaletteLabel());
+    this.a11yPaletteBlocks().forEach(block => {
+        if (block.a11yIsTagged()) {return; }
+        block.isAccessible = true;
+        block.ariaRole = 'option';
+        block.ariaTag = 'div';
+        block.excludeFromTabRing = true; // the preview is the tab stop
+        block.setAriaLabel(block.a11yLabelString);
+        block.createAccessibleElement();
+        block.ensureA11yId();
+    });
+};
+
+LibraryImportDialogMorph.prototype.setAccessibleLibraryBlock = function (block) {
+    var world = this.world();
+    if (!this.palette || !block) {return; }
+    this.palette._a11yCurrentBlock = block;
+    block.ensureA11yId();
+    this.palette.setAria('aria-activedescendant', block.a11yId);
+    if (world) {
+        world.updateFocusRing(world.lastInputWasKeyboard);
+    }
+};
+
+LibraryImportDialogMorph.prototype.handleLibraryPaletteKey = function (event) {
+    var blocks = this.a11yPaletteBlocks(),
+        n = blocks.length,
+        cur = blocks.indexOf(this.palette._a11yCurrentBlock),
+        next;
+    if (!n) {return false; }
+    switch (event.keyCode) {
+    case 38: // up
+        next = (cur <= 0) ? 0 : cur - 1;
+        break;
+    case 40: // down
+        next = (cur < 0) ? 0 : Math.min(n - 1, cur + 1);
+        break;
+    case 36: // home
+        next = 0;
+        break;
+    case 35: // end
+        next = n - 1;
+        break;
+    default:
+        return false;
+    }
+    blocks[next].scrollIntoView();
+    this.palette.syncAccessibleGeometryTree(); // scrolling moves items silently
+    this.setAccessibleLibraryBlock(blocks[next]);
+    return true;
 };
 
 // Library Cache Utilities.
@@ -12982,13 +13147,18 @@ LibraryImportDialogMorph.prototype.displayBlocks = function (libraryKey) {
         }
 
         blocks.forEach(definition => {
-            blockImage = definition.templateInstance().fullImage();
+            let template = definition.templateInstance();
+            blockImage = template.fullImage();
             blockContainer = new Morph();
             blockContainer.isCachingImage = true;
             blockContainer.bounds.setWidth(blockImage.width);
             blockContainer.bounds.setHeight(blockImage.height);
             blockContainer.cachedImage = blockImage;
             blockContainer.setPosition(new Point(x, y));
+            // accessibility: the block is only a picture here, so keep its
+            // spoken name (the palette listbox reads it out)
+            blockContainer.a11yLabelString =
+                this.ide.templateLabel(template) + ', ' + localize(category);
             this.palette.addContents(blockContainer);
 
             y += blockContainer.fullBounds().height() + padding;

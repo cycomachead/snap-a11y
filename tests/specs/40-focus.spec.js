@@ -2,15 +2,24 @@
 // documents today's focus reality.
 
 const { test, expect } = require('@playwright/test');
-const { loadSnap, snapEval } = require('../helpers/snap');
+const { loadSnap, snapEval, dismissDialogs } = require('../helpers/snap');
 
 test.describe('focus: baseline (current behavior)', () => {
-    test('DOM focus starts on the hidden keyboard handler', async ({ page }) => {
-        // Documents the status quo: all keyboard input funnels through the
-        // off-screen textarea. When the parallel DOM lands, initial focus
-        // should move to a meaningful element and this test should be
-        // updated alongside the Phase 2 specs below.
+    test('DOM focus starts on a meaningful element', async ({ page }) => {
+        // Was: focus always sat on the off-screen textarea, because all
+        // keyboard input funnels through it. With the parallel DOM, focus
+        // starts on the modal Snap! shows at startup (the dev-version
+        // warning); once no dialog is open it falls back to the textarea,
+        // which is still where text editing is driven from.
         await loadSnap(page);
+        const dialog = await page.evaluate(() => {
+            const el = document.activeElement;
+            return el.getAttribute('role') === 'dialog' &&
+                el.getAttribute('aria-label');
+        });
+        expect(dialog).toBeTruthy();
+
+        await dismissDialogs(page);
         const active = await page.evaluate(() => document.activeElement.id);
         expect(active).toBe('morphic_keyboard');
     });
@@ -40,15 +49,24 @@ test.describe('parallel DOM: focus model @spec', () => {
         expect(morphicFocus).not.toBeNull();
     });
 
-    test('opening a dialog moves focus into it and Escape restores focus', async ({ page }) => {
-        test.fixme(true, 'ARIA dialogs not implemented yet');
-        // Open the "About Snap!" dialog from the logo menu, keyboard-only.
-        await page.getByRole('button', { name: /Snap! logo/i }).focus();
+    // Open the "About Snap!" dialog from the logo menu, keyboard-only.
+    // Note that the parallel elements are pointer-events:none (the canvas
+    // owns the mouse), so these drive the menu with the keyboard.
+    async function openAboutDialog(page) {
+        await dismissDialogs(page); // the dev-version warning is modal
+        await page.getByRole('button', { name: /Snap! menu/i }).focus();
         await page.keyboard.press('Enter');
-        await page.getByRole('menuitem', { name: /About/ }).click();
+        await expect(page.getByRole('menu')).toBeVisible();
+        await page.keyboard.press('ArrowDown'); // "About..." is the first item
+        await page.keyboard.press('Enter');
+    }
+
+    test('opening a dialog moves focus into it and Escape restores focus', async ({ page }) => {
+        await openAboutDialog(page);
         const dialog = page.getByRole('dialog');
         await expect(dialog).toBeVisible();
         await expect(dialog).toHaveAttribute('aria-modal', 'true');
+        await expect(dialog).toHaveAttribute('aria-label', /About/);
         // focus is inside the dialog
         const inDialog = await page.evaluate(() => {
             const d = document.querySelector('[role="dialog"]');
@@ -59,15 +77,12 @@ test.describe('parallel DOM: focus model @spec', () => {
         await page.keyboard.press('Escape');
         await expect(dialog).toHaveCount(0);
         await expect(
-            page.getByRole('button', { name: /Snap! logo/i })
+            page.getByRole('button', { name: /Snap! menu/i })
         ).toBeFocused();
     });
 
     test('focus is trapped inside a modal dialog', async ({ page }) => {
-        test.fixme(true, 'ARIA dialogs not implemented yet');
-        await page.getByRole('button', { name: /Snap! logo/i }).focus();
-        await page.keyboard.press('Enter');
-        await page.getByRole('menuitem', { name: /About/ }).click();
+        await openAboutDialog(page);
         // Tab many times; focus must remain inside the dialog.
         for (let i = 0; i < 12; i += 1) {
             await page.keyboard.press('Tab');

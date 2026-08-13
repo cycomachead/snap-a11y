@@ -62,11 +62,11 @@ isNil, WatcherMorph, List, ListWatcherMorph, alert, console, TableMorph, BLACK,
 TableFrameMorph, ColorSlotMorph, isSnapObject, newCanvas, Symbol, SVG_Costume,
 SnapExtensions, AlignmentMorph, TextMorph, Cloud, HatBlockMorph, InputSlotMorph,
 StagePickerMorph, CustomBlockDefinition, CommentMorph, BooleanSlotMorph, Color,
-CustomHatBlockMorph*/
+CustomHatBlockMorph, SymbolMorph, MenuMorph, MorphicPreferences*/
 
 /*jshint esversion: 11, bitwise: false, evil: true*/
 
-modules.threads = '2026-May-14';
+modules.threads = '2026-August-04';
 
 var ThreadManager;
 var Process;
@@ -424,6 +424,7 @@ ThreadManager.prototype.step = function (skipAnimations) {
 ThreadManager.prototype.removeTerminatedProcesses = function () {
     // and un-highlight their scripts
     var remaining = [],
+        now = Date.now(),
         count;
     this.processes.forEach(proc => {
         var result,
@@ -462,7 +463,8 @@ ThreadManager.prototype.removeTerminatedProcesses = function () {
                     proc.homeContext.receiver.stopTalking();
                 }
             }
-            if (proc.topBlock instanceof ReporterBlockMorph ||
+            if ((proc.topBlock instanceof ReporterBlockMorph &&
+                        proc.isClicked) ||
                     proc.isShowingResult || proc.exportResult) {
                 result = proc.homeContext.inputs[0];
                 if (proc.onComplete instanceof Function) {
@@ -499,6 +501,7 @@ ThreadManager.prototype.removeTerminatedProcesses = function () {
             } else if (proc.onComplete instanceof Function) {
                 proc.onComplete(proc.homeContext.inputs[0]);
             }
+            proc.version = now;
         } else {
             remaining.push(proc);
         }
@@ -657,7 +660,8 @@ function Process(topBlock, receiver, onComplete, yieldFirst) {
     this.errorFlag = false;
     this.context = null;
     this.homeContext = new Context(null, null, null, receiver);
-    this.lastYield =  Date.now();
+    this.lastYield = Date.now();
+    this.version = this.lastYield;
     this.isFirstStep = true;
     this.isAtomic = false;
     this.prompter = null;
@@ -769,10 +773,12 @@ Process.prototype.stop = function () {
     this.readyToYield = true;
     this.readyToTerminate = true;
     this.errorFlag = false;
+    this.isPaused = false;
     if (this.context) {
         this.context.stopMusic();
     }
     this.canBroadcast = false;
+    this.version = Date.now();
 };
 
 Process.prototype.pause = function () {
@@ -784,6 +790,16 @@ Process.prototype.pause = function () {
     if (this.context && this.context.startTime) {
         this.pauseOffset = Date.now() - this.context.startTime;
     }
+    this.version = Date.now();
+};
+
+Process.prototype.step = function () {
+    // only for UI
+    if (this.isPaused) {
+        this.resume();
+        this.runStep();
+        this.pause();
+    }
 };
 
 Process.prototype.resume = function () {
@@ -792,12 +808,142 @@ Process.prototype.resume = function () {
     }
     this.isPaused = false;
     this.pauseOffset = null;
+    this.version = Date.now();
 };
 
 Process.prototype.pauseStep = function () {
     this.lastYield = Date.now();
     if (this.context && this.context.startTime) {
         this.context.startTime = this.lastYield - this.pauseOffset;
+    }
+};
+
+// Process GUI
+
+Process.prototype.widget = function () {
+    // answer a morph representing my current state with a context menu
+    // that lets the user interact
+    var morph = new Morph(),
+        data = this;
+    morph.color = new Color(255, 255, 255, 0);
+    morph.setExtent(new Point(30, 30));
+    morph.version = null;
+    morph.readout = null;
+    morph.step = function () {
+        if (this.version !== data.version) {
+            if (this.readout instanceof Morph) {
+                this.removeChild(this.readout);
+            }
+            if (data.isPaused) {
+                this.readout = new SymbolMorph('gearsApartAnimated', 30);
+            } else if (data.isRunning()) {
+                this.readout = new SymbolMorph('gearsAnimated', 30);
+            } else if (data.errorFlag) {
+                this.readout = new SymbolMorph(
+                    'gearsAnimatedBroken',
+                    30,
+                    new Color(173, 15, 0)
+                );
+            } else {
+                this.readout = new SymbolMorph('gearsApart', 30);
+            }
+            this.readout.setCenter(this.center());
+            this.add(this.readout);
+            this.version = data.version;
+            this.changed();
+        }
+    };
+    morph.userMenu = function () {
+        if (this.parentThatIsA(IDE_Morph)?.isAppMode) {return; }
+        return data.menu();
+    };
+    morph.step();
+    return morph;
+};
+
+Process.prototype.menu = function () {
+    var menu = new MenuMorph(this),
+        size = MorphicPreferences.menuFontSize;
+
+    if (this.isPaused) {
+        menu.addPair(
+            [new SymbolMorph('stepForward', size), localize('step')],
+            'step'
+        );
+        menu.addPair(
+            [new SymbolMorph('pointRight', size), localize('resume')],
+            'resume'
+        );
+    } else if (this.isRunning()) {
+        menu.addPair(
+            [new SymbolMorph('pause', size), localize('pause')],
+            'pause'
+        );
+    } else if (!this.errorFlag) {
+        return;
+    }
+    menu.addPair(
+        [new SymbolMorph('square', size), localize('stop')],
+        'stop'
+    );
+    return menu;
+};
+
+// Process primitives
+
+Process.prototype.reportNewProcess = function (script, inputs) {
+    this.assertType(script, ['command', 'reporter', 'predicate', 'hat']);
+    this.assertType(inputs, 'list');
+    return this.fork(script, inputs);
+};
+
+Process.prototype.reportProcessAttribute = function (choice, process) {
+    var value;
+    this.assertType(process, 'process');
+    switch (this.inputOption(choice)) {
+    case 'script':
+        return process.topBlock.reify();
+    case 'block':
+        return process.context;
+    case 'result':
+        value = process.homeContext.inputs[0];
+        return isNil(value) ? '' : value;
+    case 'object':
+        value = process.receiver;
+        return isNil(value) ? '' : value;
+    default:
+        return '';
+    }
+};
+
+Process.prototype.reportProcessState = function (process, choice) {
+    var state;
+    this.assertType(process, 'process');
+    if (process.isPaused) {
+        state = 'paused';
+    } else if (process.isRunning()) {
+        state = 'running';
+    } else if (process.errorFlag) {
+        state = 'error';
+    } else {
+        state = 'terminated';
+    }
+    return snapEquals(state, this.inputOption(choice));
+};
+
+Process.prototype.doChangeProcess = function (choice, process) {
+    this.assertType(process, 'process');
+    switch (this.inputOption(choice)) {
+    case 'pause':
+        return process.pause();
+    case 'resume':
+        return process.resume();
+    case 'step':
+        return process.step();
+    case 'stop':
+        return process.stop();
+    default:
+        return '';
     }
 };
 
@@ -1661,6 +1807,7 @@ Process.prototype.fork = function (context, args) {
     proc.initializeFor(context, args);
     // proc.pushContext('doYield');
     stage.threads.processes.push(proc);
+    return proc;
 };
 
 Process.prototype.initializeFor = function (context, args) {
@@ -4984,6 +5131,9 @@ Process.prototype.reportTypeOf = function (thing) {
     if (thing instanceof Color) {
         return 'color';
     }
+    if (thing instanceof Process) {
+        return 'process';
+    }
     if (thing instanceof Context) {
         if (thing.expression instanceof RingMorph) {
             return thing.expression.dataType();
@@ -7464,6 +7614,9 @@ Process.prototype.reportGet = function (query) {
                     each => each.fullCopy().reify()
                 )
             );
+        case 'processes':
+            stage = thisObj.parentThatIsA(StageMorph);
+            return new List(stage ? stage.threads.processes : []);
         case 'solutions':
             if (thisObj.solution) {
                 return new List(
@@ -7543,6 +7696,7 @@ Process.prototype.reportGet = function (query) {
             'other clones',
             'neighbors',
             'scripts',
+            'processes',
             'solutions',
             'blocks',
             'categories',
@@ -9107,8 +9261,13 @@ Process.prototype.slotType = function (spec) {
         'struct':       20,
 
         '21':           21,
-        'nue':          21 // spec
-        //mnemonics: none
+        'nue':          21, // spec
+
+        '22':           22,
+        'p':            22, // spec
+        // mnemonics:
+        'proc':         22,
+        'process':      22
 
     }[key];
     if (num === undefined) {
@@ -9138,7 +9297,7 @@ Process.prototype.slotSpec = function (num) {
 
     spec = ['s', 'n', 'b', 'l', 'mlt', 'cs', 'cmdRing', 'repRing', 'predRing',
     'anyUE', 'boolUE', 'obj', 'upvar', 'clr', 'scriptVars', 'loop', 'receive',
-    'send', 'elseif', 'parameter', 'adt', 'nUE'][id];
+    'send', 'elseif', 'parameter', 'adt', 'nUE', 'p'][id];
 
     if (spec === undefined) {
         return null;

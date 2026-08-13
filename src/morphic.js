@@ -1376,7 +1376,7 @@
 
 /*jshint esversion: 11, bitwise: false*/
 
-var morphicVersion = '2026-August-07';
+var morphicVersion = '2026-August-13';
 var modules = {}; // keep track of additional loaded modules
 var useBlurredShadows = true;
 var ZOOM = 1;
@@ -3337,6 +3337,7 @@ Morph.prototype.init = function () {
     this.onNextStep = null; // optional function to be run once
     this.acceptsFocus = null; // null: auto-detect, true/false: explicit policy
     this.isFocused = false;
+    this.isFocusVisible = false; // mirrors CSS :focus-visible
 };
 
 // Morph string representation: e.g. 'a Morph 2 [20@45 | 130@250]'
@@ -3789,7 +3790,7 @@ Morph.prototype.fullDrawOn = function (aContext, aRect) {
     if (!this.isVisible) {return; }
     this.drawOn(aContext, aRect);
     this.children.forEach(child => child.fullDrawOn(aContext, aRect));
-    if (this.isFocused) {
+    if (this.isFocused && this.isFocusVisible) {
         this.drawFocusRing(aContext, aRect);
     }
 };
@@ -4125,6 +4126,8 @@ Morph.prototype.copy = function () {
     c.parent = null;
     c.children = [];
     c.bounds = this.bounds.copy();
+    c.isFocused = false; // focus is not transferred to copies
+    c.isFocusVisible = false;
     return c;
 };
 
@@ -4791,6 +4794,13 @@ Morph.prototype.isFocusable = function () {
             (this.acceptsFocus === null &&
                 this.mouseClickLeft &&
                 this.mouseClickLeft !== nop));
+};
+
+Morph.prototype.supportsKeyboardInput = function () {
+    // answer whether I take keyboard input when focused, the way a text
+    // field does. Such morphs indicate focus regardless of how it was
+    // acquired, mirroring CSS :focus-visible
+    return false;
 };
 
 Morph.prototype.tab = function (editField) {
@@ -9298,6 +9308,10 @@ StringMorph.prototype.isFocusable = function () {
         (this.acceptsFocus || this.isEditable || this.enableLinks);
 };
 
+StringMorph.prototype.supportsKeyboardInput = function () {
+    return this.isEditable === true;
+};
+
 // TextMorph ////////////////////////////////////////////////////////////////
 
 // I am a multi-line, word-wrapping String, quasi-inheriting from StringMorph
@@ -9732,6 +9746,9 @@ TextMorph.prototype.enableSelecting = StringMorph.prototype.enableSelecting;
 TextMorph.prototype.disableSelecting = StringMorph.prototype.disableSelecting;
 
 TextMorph.prototype.isFocusable = StringMorph.prototype.isFocusable;
+
+TextMorph.prototype.supportsKeyboardInput
+    = StringMorph.prototype.supportsKeyboardInput;
 
 TextMorph.prototype.selectAllAndEdit = function () {
     this.edit();
@@ -10432,7 +10449,7 @@ FrameMorph.prototype.fullDrawOn = function (ctx, aRect) {
     if (shadow) {
         shadow.drawOn(ctx, aRect);
     }
-    if (this.isFocused) {
+    if (this.isFocused && this.isFocusVisible) {
         this.drawFocusRing(ctx, aRect);
     }
 };
@@ -11204,6 +11221,10 @@ StringFieldMorph.prototype.isFocusable = function () {
     return this.isVisible && this.isEditable && this.acceptsFocus;
 };
 
+StringFieldMorph.prototype.supportsKeyboardInput = function () {
+    return this.isEditable === true;
+};
+
 // BouncerMorph ////////////////////////////////////////////////////////
 
 // I am a Demo of a stepping custom Morph
@@ -11524,6 +11545,7 @@ HandMorph.prototype.processMouseDown = function (event) {
     }
 
     // process the actual event
+    this.world.inputModality = 'pointer';
     this.destroyTemporaries();
     this.contextMenuEnabled = true;
     this.morphToGrab = null;
@@ -12166,6 +12188,7 @@ WorldMorph.prototype.init = function (aCanvas, fillPage) {
     this.keyboardHandler = null;
     this.keyboardFocus = null;
     this.focusedMorph = null;
+    this.inputModality = 'pointer'; // or 'keyboard', the last interaction
     this.cursor = null;
     this.lastEditedText = null;
     this.activeMenu = null;
@@ -12416,6 +12439,9 @@ WorldMorph.prototype.initKeyboardHandler = function () {
          event => {
             // remember the keyCode in the world's currentKey property
             kbd.world.currentKey = event.keyCode;
+            if (!event.ctrlKey && !event.metaKey && !event.altKey) {
+                kbd.world.inputModality = 'keyboard';
+            }
             if (kbd.world.activeMenu && !kbd.world.activeMenu.hasFocus) {
                 kbd.world.stopEditing();
                 kbd.world.activeMenu.getFocus();
@@ -12436,7 +12462,9 @@ WorldMorph.prototype.initKeyboardHandler = function () {
                 }
                 event.preventDefault();
             } else if (!kbd.world.keyboardFocus &&
-                    (event.keyCode === 32 || event.keyCode === 35)) {
+                    (event.keyCode === 32 || event.keyCode === 13)) {
+                // space or enter activates the focused morph, mirroring
+                // standard button semantics
                 if (kbd.world.activateFocusedMorph()) {
                     event.preventDefault();
                 }
@@ -12679,13 +12707,21 @@ WorldMorph.prototype.focusableMorphAt = function (aMorph) {
 
 WorldMorph.prototype.setFocusedMorph = function (aMorph) {
     var oldFocus = this.focusedMorph,
-        newFocus = this.focusableMorphAt(aMorph);
+        newFocus = this.focusableMorphAt(aMorph),
+        viaKeyboard = this.inputModality === 'keyboard';
 
     if (oldFocus === newFocus) {
+        if (newFocus && viaKeyboard && !newFocus.isFocusVisible) {
+            // interacting via the keyboard upgrades an invisible
+            // focus indicator to a visible one, as in CSS
+            newFocus.isFocusVisible = true;
+            newFocus.rerender();
+        }
         return newFocus;
     }
     if (oldFocus) {
         oldFocus.isFocused = false;
+        oldFocus.isFocusVisible = false;
         if (oldFocus.reactToBlur) {
             oldFocus.reactToBlur();
         }
@@ -12694,10 +12730,17 @@ WorldMorph.prototype.setFocusedMorph = function (aMorph) {
     this.focusedMorph = newFocus;
     if (newFocus) {
         newFocus.isFocused = true;
+        // mirror CSS :focus-visible: indicate focus acquired via the
+        // keyboard, or on morphs that take keyboard input (text fields),
+        // but not focus given to buttons, blocks etc. with the mouse
+        newFocus.isFocusVisible = viaKeyboard ||
+            newFocus.supportsKeyboardInput();
         if (newFocus.reactToFocus) {
             newFocus.reactToFocus();
         }
-        newFocus.scrollIntoView();
+        if (viaKeyboard) {
+            newFocus.scrollIntoView();
+        }
         newFocus.rerender();
     }
     return this.focusedMorph;

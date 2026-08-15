@@ -6,11 +6,27 @@ const { loadSnap, snapEval } = require('../helpers/snap');
 
 test.describe('focus: baseline (current behavior)', () => {
     test('DOM focus starts on the hidden keyboard handler', async ({ page }) => {
-        // Documents the status quo: all keyboard input funnels through the
-        // off-screen textarea. When the parallel DOM lands, initial focus
-        // should move to a meaningful element and this test should be
-        // updated alongside the Phase 2 specs below.
+        // All keyboard input funnels through the off-screen textarea, so
+        // that is where focus rests when nothing in the IDE holds it.
+        // (A development build first shows its "CAUTION! Development
+        // Version" dialog, which - being a real ARIA dialog - takes focus;
+        // loadSnap dismisses it, returning focus to the textarea.)
         await loadSnap(page);
+        const active = await page.evaluate(() => document.activeElement.id);
+        expect(active).toBe('morphic_keyboard');
+    });
+
+    test('a dialog shown at startup takes focus', async ({ page }) => {
+        await loadSnap(page, { keepNag: true });
+        const nag = await snapEval(page, () =>
+            world.children.some(m => m instanceof DialogBoxMorph && m.nag));
+        test.skip(!nag, 'no startup dialog in this build');
+        const dialog = page.getByRole('dialog', { name: /Development Version/ });
+        await expect(dialog).toHaveAttribute('aria-modal', 'true');
+        await expect(dialog.getByRole('button', { name: 'OK' })).toBeFocused();
+        // Enter on the focused OK button closes it
+        await page.keyboard.press('Enter');
+        await expect(dialog).toHaveCount(0);
         const active = await page.evaluate(() => document.activeElement.id);
         expect(active).toBe('morphic_keyboard');
     });
@@ -40,15 +56,24 @@ test.describe('parallel DOM: focus model @spec', () => {
         expect(morphicFocus).not.toBeNull();
     });
 
-    test('opening a dialog moves focus into it and Escape restores focus', async ({ page }) => {
-        test.fixme(true, 'ARIA dialogs not implemented yet');
-        // Open the "About Snap!" dialog from the logo menu, keyboard-only.
-        await page.getByRole('button', { name: /Snap! logo/i }).focus();
+    // the parallel elements are pointer-events:none (the canvas takes the
+    // mouse), so a menu item is "clicked" the way assistive tech does it: a
+    // DOM click event on its element
+    async function openAboutDialog(page) {
+        await page.getByRole('button', { name: /Snap! menu/i }).focus();
         await page.keyboard.press('Enter');
-        await page.getByRole('menuitem', { name: /About/ }).click();
+        await page.getByRole('menuitem', { name: /^About/ }).dispatchEvent('click');
+    }
+
+    test('opening a dialog moves focus into it and Escape restores focus', async ({ page }) => {
+        // Open the "About Snap!" dialog from the logo menu, keyboard-only.
+        await openAboutDialog(page);
         const dialog = page.getByRole('dialog');
         await expect(dialog).toBeVisible();
         await expect(dialog).toHaveAttribute('aria-modal', 'true');
+        await expect(dialog).toHaveAccessibleName(/About Snap/);
+        // the body text is the dialog's description
+        await expect(dialog).toHaveAccessibleDescription(/Snap!/);
         // focus is inside the dialog
         const inDialog = await page.evaluate(() => {
             const d = document.querySelector('[role="dialog"]');
@@ -59,16 +84,14 @@ test.describe('parallel DOM: focus model @spec', () => {
         await page.keyboard.press('Escape');
         await expect(dialog).toHaveCount(0);
         await expect(
-            page.getByRole('button', { name: /Snap! logo/i })
+            page.getByRole('button', { name: /Snap! menu/i })
         ).toBeFocused();
     });
 
     test('focus is trapped inside a modal dialog', async ({ page }) => {
-        test.fixme(true, 'ARIA dialogs not implemented yet');
-        await page.getByRole('button', { name: /Snap! logo/i }).focus();
-        await page.keyboard.press('Enter');
-        await page.getByRole('menuitem', { name: /About/ }).click();
+        await openAboutDialog(page);
         // Tab many times; focus must remain inside the dialog.
+        const seen = new Set();
         for (let i = 0; i < 12; i += 1) {
             await page.keyboard.press('Tab');
             const inDialog = await page.evaluate(() => {
@@ -76,6 +99,11 @@ test.describe('parallel DOM: focus model @spec', () => {
                 return d && d.contains(document.activeElement);
             });
             expect(inDialog).toBe(true);
+            seen.add(await page.evaluate(
+                () => document.activeElement.getAttribute('aria-label')));
         }
+        // ... and cycle through all of the dialog's buttons
+        expect([...seen]).toEqual(
+            expect.arrayContaining(['OK', 'License...', 'Modules...']));
     });
 });

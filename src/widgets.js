@@ -89,7 +89,7 @@ IDE_Morph*/
 
 /*jshint esversion: 6*/
 
-modules.widgets = '2026-March-03';
+modules.widgets = '2026-August-15';
 
 var PushButtonMorph;
 var ToggleButtonMorph;
@@ -2660,10 +2660,18 @@ DialogBoxMorph.prototype.popUp = function (world, noFocus) {
                 this.instances[world.stamp][this.key] = this;
             }
         }
+        // accessibility: remember where AT focus is, to return there on close
+        if (this.captureAccessibleFocus) {
+            this.captureAccessibleFocus(world);
+        }
         world.add(this);
         if (!noFocus) {world.keyboardFocus = this; }
         this.setCenter(world.center());
         this.edit();
+        // accessibility: expose my contents and move AT focus into me
+        if (this.enterAccessibleFocus) {
+            this.enterAccessibleFocus(world);
+        }
     }
 };
 
@@ -2704,6 +2712,10 @@ DialogBoxMorph.prototype.justDropped = function (hand) {
 
 DialogBoxMorph.prototype.destroy = function () {
     var world = this.world();
+    // accessibility: hand AT focus back to where it was before I opened
+    if (this.restoreAccessibleFocus) {
+        this.restoreAccessibleFocus(world);
+    }
     world.keyboardFocus = null;
     world.hand.destroyTemporaries();
     DialogBoxMorph.uber.destroy.call(this);
@@ -2776,6 +2788,10 @@ DialogBoxMorph.prototype.addButton = function (action, label) {
     button.contrast = this.buttonContrast;
     button.fixLayout();
     this.buttons.add(button);
+    // accessibility: buttons added while I'm already showing get exposed too
+    if (this.a11yElement && this.tagAccessibleContents) {
+        this.tagAccessibleContents();
+    }
     return button;
 };
 
@@ -2925,6 +2941,233 @@ DialogBoxMorph.prototype.processKeyDown = function (event) {
     default:
         nop();
         // this.inspectKeyEvent(event);
+    }
+};
+
+// DialogBoxMorph accessibility
+
+/*
+    A dialog is exposed as an ARIA dialog (role=dialog, aria-modal, named by
+    its title, described by its body text) that traps Tab: while AT focus is
+    inside, Tab / Shift+Tab cycle through the dialog's own stops (input
+    fields, lists, checkboxes, buttons - tagged by tagAccessibleContents),
+    Escape cancels, and closing the dialog returns focus to wherever it was
+    before the dialog opened. The dialog itself is one stop in the world's
+    Tab ring, so a keyboard user can always get back into an open dialog.
+    All of this is inert unless accessibility.js is loaded.
+*/
+
+DialogBoxMorph.prototype.isAccessible = true;
+DialogBoxMorph.prototype.ariaRole = 'dialog';
+DialogBoxMorph.prototype.a11yTrapsFocus = true;
+
+DialogBoxMorph.prototype.ariaLabel = function () {
+    if (this._ariaLabel) {return this._ariaLabel; }
+    return this.labelString ? localize(this.labelString) : localize('dialog');
+};
+
+DialogBoxMorph.prototype.updateAccessibleElement = function () {
+    var el = this.a11yElement,
+        text;
+    if (!el) {return; }
+    Morph.prototype.updateAccessibleElement.call(this);
+    el.setAttribute('aria-modal', 'true');
+    // static body text (inform / askYesNo) becomes the dialog's description,
+    // so a screen reader speaks it right after the title
+    if (this.body instanceof TextMorph || this.body instanceof StringMorph) {
+        text = this.body.text;
+    }
+    if (text) {
+        el.setAttribute('aria-description', text);
+    } else {
+        el.removeAttribute('aria-description');
+    }
+};
+
+DialogBoxMorph.prototype.a11yTabStops = function () {
+    // my preferred Tab order: everything in screen order (heirs may override
+    // to list e.g. fields, then the list, then the buttons)
+    return [];
+};
+
+DialogBoxMorph.prototype.a11yEscape = function () {
+    // Escape pressed while AT focus is inside me
+    this.cancel();
+};
+
+DialogBoxMorph.prototype.a11yActivate = function () {
+    // Enter / Space on the dialog itself moves into its first stop (or, for
+    // a dialog without any stops, accepts it - the legacy Enter behavior)
+    var world = this.world(),
+        stops;
+    if (!world) {return; } // already closed
+    stops = world.focusableMorphs(this);
+    if (stops.length) {
+        world.setFocus(stops[0], {viaKeyboard: true});
+    } else {
+        this.ok();
+    }
+};
+
+DialogBoxMorph.prototype.tagAccessibleContents = function () {
+    // expose my interactive parts as tab stops. Idempotent, cheap: re-run
+    // whenever contents change (heirs call it after rebuilding fields).
+    // Push buttons + toggle buttons -> button (aria-pressed for toggles),
+    // toggles -> checkbox / radio, input fields -> textbox, editable text ->
+    // multi-line textbox, other exposed text -> read-only textbox. Lists
+    // (ListMorph) are listboxes by default (accessibility.js).
+    if (!this.a11yElement) {return; }
+    this.allChildren().forEach(m => {
+        var label;
+        if (m === this || m.a11yIgnore || m.a11yIsTagged()) {return; }
+        if (m instanceof ToggleMorph) { // (a PushButtonMorph too - test first)
+            m.isAccessible = true;
+            m.ariaRole = m.labelString === '\u25CF' ? 'radio' : 'checkbox';
+            m.a11yUseChecked = true;
+            m.setAriaLabel(m._ariaLabel || m.captionString || m.hint ||
+                this.toggleElementLabel(m) || '');
+            m.createAccessibleElement();
+            if (m.a11yElement) {
+                m.a11yElement.setAttribute('aria-checked',
+                    m.state ? 'true' : 'false');
+            }
+        } else if (m instanceof PushButtonMorph) { // incl. ToggleButtonMorph
+            label = m._ariaLabel ||
+                (typeof m.labelString === 'string' && m.labelString.trim()) ||
+                m.hint;
+            if (!label) {return; } // skip unlabelled (icon-only) buttons
+            m.isAccessible = true;
+            m.ariaRole = 'button';
+            m.ariaTag = 'button';
+            if (m instanceof ToggleButtonMorph) {
+                m.a11yUsePressed = true;
+            }
+            m.setAriaLabel(localize(label).replace(/[\n\r]+/g, ' '));
+            m.createAccessibleElement();
+            if (m.a11yUsePressed && m.a11yElement) {
+                m.a11yElement.setAttribute('aria-pressed',
+                    m.state ? 'true' : 'false');
+            }
+        } else if (m instanceof InputFieldMorph) {
+            m.isAccessible = true;
+            m.ariaRole = 'textbox';
+            if (!m._ariaLabel) {
+                m.setAriaLabel(this.ariaLabel());
+            }
+            m.createAccessibleElement();
+        } else if (m instanceof TextMorph && m.a11yExposeText) {
+            this.tagAccessibleText(m);
+        }
+    });
+};
+
+DialogBoxMorph.prototype.toggleElementLabel = function (toggle) {
+    // the visible words of the block (or other morph) a caption-less toggle
+    // stands for, e.g. in the "hide blocks" / "export blocks" dialogs
+    var element = toggle.toggleElement || toggle.element,
+        words = [];
+    if (!(element instanceof Morph)) {return null; }
+    if (element.ariaLabel && element.ariaLabel()) {
+        return element.ariaLabel();
+    }
+    (element.parts ? element.parts() : element.children).forEach(part => {
+        if (typeof part.text === 'string' && part.text.length) {
+            words.push(part.text);
+        }
+    });
+    return words.join(' ').trim() || null;
+};
+
+DialogBoxMorph.prototype.tagAccessibleText = function (textMorph) {
+    // expose a (possibly editable) text morph as a multi-line textbox stop;
+    // Tab-focusing an editable one starts editing it
+    var text = textMorph;
+    text.isAccessible = true;
+    text.ariaRole = 'textbox';
+    text.setAria('aria-multiline', 'true');
+    text.setAria('aria-readonly', text.isEditable ? null : 'true');
+    text.updateAccessibleElement = function () {
+        Morph.prototype.updateAccessibleElement.call(this);
+        if (this.a11yElement) {
+            this.a11yElement.textContent = this.text; // exposed as the value
+        }
+    };
+    text.rerender = function () { // keep the exposed value current
+        TextMorph.prototype.rerender.call(this);
+        if (this.a11yElement) {
+            this.updateAccessibleElement();
+        }
+    };
+    text.reactToFocus = function (viaKeyboard) {
+        if (viaKeyboard && this.isEditable) {
+            this.edit();
+        }
+    };
+    text.a11yActivate = function () {
+        if (this.isEditable) {
+            this.edit();
+        }
+    };
+    text.createAccessibleElement();
+};
+
+DialogBoxMorph.prototype.captureAccessibleFocus = function (world) {
+    // called from popUp() before I'm shown: remember the AT focus to return
+    // to when I close (possibly inside another dialog)
+    if (!world || !world.accessibilityEnabled) {return; }
+    this._a11yReturnFocus = world.focusedMorph;
+};
+
+DialogBoxMorph.prototype.enterAccessibleFocus = function (world) {
+    // called from popUp() once I'm shown: expose my contents and move AT
+    // focus into me - onto my first stop (or onto the dialog itself if there
+    // is none), unless popUp's edit() already put it into one of my fields
+    var stops;
+    if (!world || !world.accessibilityEnabled || !this.a11yElement) {return; }
+    this.tagAccessibleContents();
+    if (world.a11yTextEditing && world.cursor &&
+            world.cursor.target.parentThatIsA(DialogBoxMorph) === this) {
+        // the edit began before the field was tagged: name the textarea now
+        world.a11yPrepareTextEdit(world.cursor.target);
+        return;
+    }
+    stops = world.focusableMorphs(this);
+    world.setFocus(stops.length ? stops[0] : this, {force: true});
+};
+
+DialogBoxMorph.prototype.restoreAccessibleFocus = function (world) {
+    // called from destroy(): if AT focus is inside me, hand it back to the
+    // morph that had it before I opened (or, failing that, to nobody)
+    var target = this._a11yReturnFocus,
+        focused,
+        inside;
+    if (!world || !world.accessibilityEnabled) {return; }
+    this._a11yReturnFocus = null;
+    focused = world.focusedMorph;
+    if (world.a11yTextEditing && world.cursor) {
+        focused = world.cursor.target;
+    }
+    inside = focused && (focused === this ||
+        focused.parentThatIsA(DialogBoxMorph) === this);
+    if (!inside) {return; }
+    if (target && target.a11yElement && target.a11yWorld() === world &&
+            target.isFocusable() && target !== this) {
+        world.setFocus(target, {force: true});
+    } else {
+        if (world.a11yTextEditing) {
+            world.stopEditing();
+        }
+        world.focusedMorph = null;
+        world.updateFocusRing(false);
+        if (world.keyboardHandler) { // return native focus to the textarea
+            world._a11ySyncingFocus = true;
+            try {
+                world.keyboardHandler.focus();
+            } catch (err) {
+                nop();
+            }
+            world._a11ySyncingFocus = false;
+        }
     }
 };
 
@@ -3303,6 +3546,10 @@ InputFieldMorph.prototype.setContents = function (aStringOrFloat) {
     cnts.changed();
     cnts.fixLayout();
     cnts.rerender();
+    // accessibility: keep my exposed value in sync
+    if (this.a11yElement) {
+        this.updateAccessibleElement();
+    }
 };
 
 InputFieldMorph.prototype.edit = function () {
@@ -3450,6 +3697,46 @@ InputFieldMorph.prototype.getValue = function () {
 
 InputFieldMorph.prototype.normalizeSpaces
     = DialogBoxMorph.prototype.normalizeSpaces;
+
+// InputFieldMorph accessibility (inert unless tagged isAccessible, e.g. by
+// the dialog that contains me): I'm a textbox whose value is my contents;
+// keyboard-focusing or activating me starts editing my text (read-only
+// choice fields pop up their drop-down instead)
+
+InputFieldMorph.prototype.ariaRole = 'textbox';
+
+InputFieldMorph.prototype.updateAccessibleElement = function () {
+    var el = this.a11yElement,
+        contents;
+    if (!el) {return; }
+    Morph.prototype.updateAccessibleElement.call(this);
+    contents = this.contents();
+    el.textContent = contents ? contents.string() : ''; // exposed as the value
+    if (this.isReadOnly) {
+        el.setAttribute('aria-readonly', 'true');
+    } else {
+        el.removeAttribute('aria-readonly');
+    }
+    if (this.choices) {
+        el.setAttribute('aria-haspopup', 'menu');
+    } else {
+        el.removeAttribute('aria-haspopup');
+    }
+};
+
+InputFieldMorph.prototype.reactToFocus = function (viaKeyboard) {
+    if (viaKeyboard && !this.isReadOnly) {
+        this.edit();
+    }
+};
+
+InputFieldMorph.prototype.a11yActivate = function () {
+    if (this.isReadOnly) {
+        this.dropDownMenu();
+    } else {
+        this.edit();
+    }
+};
 
 // InputFieldMorph drawing:
 

@@ -87,7 +87,7 @@ HatBlockMorph, ZOOM*/
 
 // Global stuff ////////////////////////////////////////////////////////
 
-modules.gui = '2026-August-08';
+modules.gui = '2026-August-15';
 
 // Declarations
 
@@ -3014,12 +3014,19 @@ IDE_Morph.prototype.tagAccessibleRegion = function (morph, label) {
 IDE_Morph.prototype.orderAccessibleRegions = function () {
     // re-append the region elements in reading order so panes that were
     // recreated (and thus appended last) don't scramble the landmark order
+    var world = this.world(),
+        active = document.activeElement;
     this.accessibleRegions().forEach(pane => {
         var el = pane[0] && pane[0].a11yElement;
         if (el && el.parentNode) {
             el.parentNode.appendChild(el);
         }
     });
+    // moving a node in the DOM blurs a focused element inside it - restore
+    if (active && active !== document.activeElement && active.isConnected &&
+            world && active.morph && world.setFocus) {
+        world.setFocus(active.morph, {force: true});
+    }
 };
 
 IDE_Morph.prototype.setAccessibleButtons = function () {
@@ -11341,6 +11348,7 @@ ProjectDialogMorph.prototype.buildContents = function () {
         this.notesText.isEditable = true;
         this.notesText.enableSelecting();
     }
+    this.notesText.a11yExposeText = true; // accessibility: a (read-only) stop
 
     this.notesField.isTextLineWrapping = true;
     this.notesField.padding = 3;
@@ -11530,6 +11538,9 @@ ProjectDialogMorph.prototype.addSourceButton = function (
     button.pressColor = this.titleBarColor.darker(20);
     button.fixLayout();
     button.refresh();
+    if (button.setAriaLabel) { // accessibility: my label is an image
+        button.setAriaLabel(label);
+    }
     this.srcBar.add(button);
 };
 
@@ -12218,6 +12229,42 @@ ProjectDialogMorph.prototype.edit = function () {
     }
 };
 
+// ProjectDialogMorph accessibility
+
+ProjectDialogMorph.prototype.setAccessibleLabels = function () {
+    // name my fields for the screen reader (idempotent; the list field is
+    // re-created whenever the source changes, so this runs from fixLayout)
+    var labels = [
+        [this.nameField, 'Project name'],
+        [this.filterField, 'Search projects'],
+        [this.listField, 'Projects'],
+        [this.notesText, 'Project notes']
+    ];
+    labels.forEach(pair => {
+        var morph = pair[0],
+            label = localize(pair[1]);
+        if (morph && morph.setAriaLabel && morph._ariaLabel !== label) {
+            morph.setAriaLabel(label);
+        }
+    });
+    if (this.a11yElement && this.tagAccessibleContents) {
+        this.tagAccessibleContents(); // expose anything created since popUp
+    }
+};
+
+ProjectDialogMorph.prototype.a11yTabStops = function () {
+    // Tab order: sources, name / search field, list, notes, then the buttons
+    var buttons = this.buttons ?
+        this.buttons.topRow.children.concat(this.buttons.bottomRow.children)
+        : [];
+    return (this.srcBar ? this.srcBar.children : []).concat([
+        this.nameField,
+        this.filterField,
+        this.listField,
+        this.notesText
+    ]).concat(buttons).filter(m => m);
+};
+
 // ProjectDialogMorph layout
 
 ProjectDialogMorph.prototype.fixLayout = function () {
@@ -12228,6 +12275,7 @@ ProjectDialogMorph.prototype.fixLayout = function () {
     if (this.buttons && (this.buttons.children.length > 0)) {
         this.buttons.fixLayout();
     }
+    this.setAccessibleLabels();
 
     if (this.body) {
         this.body.setPosition(this.position().add(new Point(
@@ -12715,6 +12763,7 @@ LibraryImportDialogMorph.prototype.initializeLibraryDescription = function () {
     this.notesField.contents.acceptsDrops = false;
 
     this.notesText = new TextMorph('');
+    this.notesText.a11yExposeText = true; // accessibility: a read-only stop
 
     this.notesField.isTextLineWrapping = true;
     this.notesField.padding = 3;
@@ -12803,6 +12852,37 @@ LibraryImportDialogMorph.prototype.destroy = function () {
 LibraryImportDialogMorph.prototype.fixListFieldItemColors =
     ProjectDialogMorph.prototype.fixListFieldItemColors;
 
+// LibraryImportDialogMorph accessibility
+
+LibraryImportDialogMorph.prototype.setAccessibleLabels = function () {
+    // name my fields for the screen reader (idempotent; the list field is
+    // re-created on every filter change, so this runs from fixLayout)
+    var labels = [
+        [this.filterField, 'Search libraries'],
+        [this.listField, 'Libraries'],
+        [this.notesText, 'Library description']
+    ];
+    labels.forEach(pair => {
+        var morph = pair[0],
+            label = localize(pair[1]);
+        if (morph && morph.setAriaLabel && morph._ariaLabel !== label) {
+            morph.setAriaLabel(label);
+        }
+    });
+    if (this.a11yElement && this.tagAccessibleContents) {
+        this.tagAccessibleContents(); // expose anything created since popUp
+    }
+};
+
+LibraryImportDialogMorph.prototype.a11yTabStops = function () {
+    // Tab order: search field, list, description, then the buttons
+    return [
+        this.filterField,
+        this.listField,
+        this.notesText
+    ].concat(this.buttons ? this.buttons.children : []).filter(m => m);
+};
+
 LibraryImportDialogMorph.prototype.clearDetails = function () {
     this.notesText.text = '';
     this.notesText.rerender();
@@ -12815,6 +12895,7 @@ LibraryImportDialogMorph.prototype.fixLayout = function () {
         thin = this.padding / 2,
         inputField = this.filterField;
 
+    this.setAccessibleLabels();
     if (this.body) {
         this.body.setPosition(this.position().add(new Point(
             this.padding,

@@ -2,6 +2,55 @@
 
 ## in development:
 
+### 2026-08-15 — accessible dialogs: Open / Save Project, Libraries
+* DialogBoxMorph is now an ARIA dialog (role=dialog, aria-modal, named by
+  its title, static body text as its description) that traps focus: while
+  AT focus is inside, Tab / Shift+Tab cycle through the dialog's own stops
+  (wrapping), Escape cancels, and closing the dialog returns focus to the
+  morph that had it before it opened; the dialog itself is one stop in the
+  world's Tab ring so a keyboard user can always get back into it. On
+  popUp the dialog exposes its contents (tagAccessibleContents: push /
+  toggle buttons, checkbox / radio toggles, input fields, editable and
+  read-only text) and moves focus onto its first stop - or into the text
+  field popUp already started editing (widgets.js)
+* ListMorph is an ARIA listbox (accessibility.js): ONE tab stop with the
+  items as options in aria-activedescendant; Up / Down / Home / End move the
+  selection exactly like a click (so a dialog's "show details" action
+  runs), Enter fires the list's double-click action (the dialog's default
+  button); a ListMorph's inner MenuMorph no longer appears as a menu
+* InputFieldMorph is a textbox (when tagged): keyboard-focusing it starts
+  editing, Enter / Space activate it, its value is exposed; the hidden
+  morphic_keyboard textarea takes the edited field's name while editing so
+  the screen reader announces "Search projects" rather than "keyboard
+  input"; Tab out of a text field inside a dialog moves to the dialog's
+  next stop instead of hopping to the next editable text anywhere in the
+  world (a11yFocusScope / a11yTabWithin in accessibility.js)
+* Open / Save Project (ProjectDialogMorph): named fields (Project name,
+  Search projects, Projects list, Project notes), the Cloud / Examples /
+  Computer source buttons are named pressed-state buttons, deliberate Tab
+  order (sources, field, list, notes, buttons); Import library
+  (LibraryImportDialogMorph): Search libraries, Libraries list, Library
+  description (read-only textbox), buttons
+* Morph.hide / show / toggleVisibility now sync aria-hidden across the
+  hidden subtree (a hidden parent doesn't flip its children's isVisible), so
+  e.g. a dialog's hidden Share / Publish buttons stay out of the AT tree
+* fixed two parallel-DOM bubbling bugs: focusin / focusout and click
+  listeners on nested elements reacted to their descendants' events too
+  (focusing a toolbar button made its region the focused morph; Enter on a
+  dialog button re-activated the already-closed dialog)
+* focus no longer falls off to <body>: destroying a morph whose element (or
+  a child's) holds native focus hands focus back to the hidden textarea,
+  and orderAccessibleRegions re-focuses the element it moved (re-appending
+  a region's node - e.g. after opening a project - blurred the focused
+  button inside it, so Enter on a project in the Open dialog left the
+  keyboard user with no focus at all)
+* tests: new tests/specs/45-dialogs.spec.js (Open / Save Project, Import
+  library, generic prompt), the two dialog specs in 40-focus are live;
+  loadSnap dismisses the dev-version nag dialog (it takes focus like any
+  other dialog now); helpers openExamplesDialog / openLibrariesDialog
+* bumped morphic.js, accessibility.js, widgets.js, gui.js ?version= in
+  snap.html, morphicVersion / module dates, and the sw.js cache version
+
 ### 2026-08-13 — merge the parallel-DOM screen-reader prototype
 * merged the morphic-a11y-prototype branch: src/accessibility.js now
   mirrors opted-in morphs into a parallel, invisible DOM tree (roving

@@ -47,15 +47,24 @@
     * geometry + focus stay in two-way sync regardless of who intercepts the
       keypress / pointer event
 
+    * a focus-trapping morph (a11yTrapsFocus, e.g. a dialog) keeps Tab
+      cycling among its own stops while focus is inside it, and Escape is its
+      cancel action; ListMorph is an ARIA listbox with arrow-key navigation
+
     This file is purely *additive*: it extends Morph.prototype and
-    WorldMorph.prototype and defines FocusIndicatorMorph. The handful of changes
-    to existing morphic.js functions (global focus state, the changed()/
-    addChild()/removeChild()/destroy()/edit()/stopEditing() hooks) live in
-    morphic.js itself, each guarded so morphic.js still runs without this file.
+    WorldMorph.prototype (plus MenuMorph / MenuItemMorph / ListMorph /
+    StringMorph) and defines FocusIndicatorMorph. The handful of changes to
+    existing morphic.js functions (global focus state, the changed()/
+    addChild()/removeChild()/destroy()/hide()/show()/edit()/stopEditing()/
+    ListMorph.select() hooks) live in morphic.js itself, each guarded so
+    morphic.js still runs without this file. Widget-level dialogs
+    (DialogBoxMorph, InputFieldMorph) carry their own hooks in widgets.js.
 
 */
 
-/*global Morph, WorldMorph, Node, Color, Point, Rectangle, ZOOM, nop,
+/*global Morph, WorldMorph, Node, Color, Point, Rectangle, ZOOM, nop, detect,
+  MenuMorph, MenuItemMorph, ListMorph, ScrollFrameMorph, ScriptFocusMorph,
+  StringMorph, StringFieldMorph,
   getDocumentPositionOf, MorphicPreferences, modules, document, window*/
 
 /*jshint esversion: 11*/
@@ -63,7 +72,7 @@
 // Global settings ////////////////////////////////////////////////////////
 
 if (typeof modules !== 'undefined') {
-    modules.accessibility = '2026-06-29';
+    modules.accessibility = '2026-08-15';
 }
 
 // monotonic id source for elements that need a stable DOM id (e.g. menu items
@@ -111,6 +120,7 @@ Morph.prototype._ariaLabel = null;             // explicit accessible name
 Morph.prototype.a11yId = null;                 // optional stable element id
 Morph.prototype.a11yHandleKey = null;          // composite widgets set a function
 Morph.prototype._a11yDomParentMorph = null;    // accessible ancestor I nest under
+Morph.prototype.a11yTrapsFocus = false;        // Tab cycles inside me (dialogs)
 
 Morph.prototype.isFocusable = function () {
     return this.isAccessible && this.isVisible && !this.a11yDisabled &&
@@ -271,18 +281,23 @@ Morph.prototype.createAccessibleElement = function () {
     el.tabIndex = -1; // roving tabindex: focusable only programmatically
     Object.assign(el.style, world.a11yHiddenStyle);
 
-    // two-way focus sync (guarded against our own programmatic .focus())
-    el.addEventListener('focusin', function () {
-        if (world._a11ySyncingFocus) {return; }
+    // two-way focus sync (guarded against our own programmatic .focus()).
+    // focusin / focusout bubble up through nested elements (a button inside
+    // a region), so each element only reacts to its own focus changes
+    el.addEventListener('focusin', function (event) {
+        if (world._a11ySyncingFocus || event.target !== el) {return; }
         world.setFocusFromDOM(myself);
     });
     el.addEventListener('focusout', function (event) {
-        if (world._a11ySyncingFocus) {return; }
+        if (world._a11ySyncingFocus || event.target !== el) {return; }
         world.handleA11yBlur(myself, event.relatedTarget);
     });
     // native activation: Enter/Space on a <button>, an AT "click", a real
     // mouse click never reaches here (pointer-events:none -> canvas gets it)
     el.addEventListener('click', function (event) {
+        // only my own activation - clicks bubble up through nested elements
+        // (a button inside a dialog) and must not activate the ancestors
+        if (event.target !== el) {return; }
         world.activateAccessible(myself, event);
     });
 
@@ -337,18 +352,42 @@ Morph.prototype.syncAccessibleGeometry = function () {
     el.style.width = (box.width() * zoom) + 'px';
     el.style.height = (box.height() * zoom) + 'px';
 
-    // hide from AT when fully clipped out of view by a scroll frame
-    visible = this.visibleBounds();
-    if (visible.width() <= 0 || visible.height() <= 0) {
+    // hide from AT when hidden (or inside a hidden morph), or when fully
+    // clipped out of view by a scroll frame
+    visible = this.a11yIsShowing() ? this.visibleBounds() : null;
+    if (!visible || visible.width() <= 0 || visible.height() <= 0) {
         el.setAttribute('aria-hidden', 'true');
     } else if (el.getAttribute('aria-hidden') === 'true') {
         el.removeAttribute('aria-hidden');
     }
 };
 
+Morph.prototype.a11yIsShowing = function () {
+    // am I visible, and are all my ancestors? (isVisible is per-morph, a
+    // hidden parent doesn't flip its children's flag)
+    var m = this;
+    while (m) {
+        if (m.isVisible === false) {
+            return false;
+        }
+        m = m.parent;
+    }
+    return true;
+};
+
+Morph.prototype.a11ySyncVisibility = function () {
+    // called from hide() / show(): re-sync aria-hidden across my subtree
+    this.forAllChildren(m => {
+        if (m.a11yElement) {
+            m.syncAccessibleGeometry();
+        }
+    });
+};
+
 Morph.prototype.destroyAccessibleElement = function () {
     var el = this.a11yElement,
-        world;
+        world,
+        hadFocus = el && el.contains(document.activeElement); // me or a child
     if (!el) {return; }
     world = this.a11yWorld();
     if (world && world.focusedMorph === this) {
@@ -360,6 +399,17 @@ Morph.prototype.destroyAccessibleElement = function () {
     }
     el.morph = null;
     this.a11yElement = null;
+    // don't let native focus fall off to <body> (where keystrokes reach
+    // nobody): give it back to the hidden textarea, Morphic's key receiver
+    if (hadFocus && world && world.keyboardHandler) {
+        world._a11ySyncingFocus = true;
+        try {
+            world.keyboardHandler.focus();
+        } catch (err) {
+            nop();
+        }
+        world._a11ySyncingFocus = false;
+    }
 };
 
 // subtree helpers used by the addChild / removeChild / destroy hooks
@@ -395,6 +445,10 @@ Morph.prototype.a11yOrderKey = function () {
 //   reactToFocus(viaKeyboard)  - morph gained AT focus
 //   reactToUnfocus()           - morph lost AT focus
 //   a11yActivate(event)        - custom activation (else mouseClickLeft)
+//   a11yTabStops()             - a focus-trapping morph's preferred Tab order
+//                                (an Array of morphs; unlisted stops follow in
+//                                screen order)
+//   a11yEscape()               - a focus-trapping morph's Escape action
 
 // WorldMorph accessibility ///////////////////////////////////////////////
 
@@ -516,6 +570,58 @@ WorldMorph.prototype.announce = function (text, options) {
         live.textContent = text;
         this._a11yAnnounceTimer = null;
     }, 50);
+};
+
+WorldMorph.prototype.a11yTextEditEnded = function (textMorph) {
+    // a text edit just ended (called from stopEditing): refresh the parallel
+    // node of the edited text, or of the nearest tagged ancestor (e.g. the
+    // input field around it) so its exposed value reflects the new text,
+    // and give the hidden textarea its generic name back
+    var m = textMorph;
+    if (this.keyboardHandler && this._a11yKeyboardLabel) {
+        this.keyboardHandler.setAttribute('aria-label', this._a11yKeyboardLabel);
+    }
+    while (m) {
+        if (m.a11yElement) {
+            m.updateAccessibleElement();
+            return;
+        }
+        m = m.parent;
+    }
+};
+
+WorldMorph.prototype.a11yPrepareTextEdit = function (textMorph) {
+    // a text edit is about to start (called from edit(), before the hidden
+    // textarea takes native focus): if the text belongs to an exposed textbox
+    // (e.g. an input field in a dialog), name the textarea after it so the
+    // screen reader announces the field rather than "keyboard input"
+    var m = textMorph,
+        label = null;
+    if (!this.keyboardHandler || !this.accessibilityEnabled) {return; }
+    if (!this._a11yKeyboardLabel) {
+        this._a11yKeyboardLabel =
+            this.keyboardHandler.getAttribute('aria-label') || 'keyboard input';
+    }
+    while (m && !label) {
+        if (m.a11yElement && m.ariaRole === 'textbox') {
+            label = m.ariaLabel();
+        }
+        m = m.parent;
+    }
+    this.keyboardHandler.setAttribute('aria-label',
+        label || this._a11yKeyboardLabel);
+};
+
+// an edited text inside a field (a StringFieldMorph, e.g. the contents of a
+// dialog's input field) shows the focus ring around the exposed field rather
+// than around the bare - possibly empty, hence tiny - text
+StringMorph.prototype.a11yActiveTarget = function () {
+    var field = this.parent;
+    if (field instanceof StringFieldMorph && field.parent &&
+            field.parent.a11yElement) {
+        return field.parent;
+    }
+    return this;
 };
 
 // --- input-source tracking (focus-visible) ------------------------------
@@ -656,9 +762,14 @@ WorldMorph.prototype.activateAccessible = function (morph, event) {
 
 // --- keyboard navigation (roving) ---------------------------------------
 
-WorldMorph.prototype.focusableMorphs = function () {
-    // depth-first pre-order walk => reading order
-    var result = [];
+WorldMorph.prototype.focusableMorphs = function (scope) {
+    // depth-first pre-order walk => reading order.
+    // Without a scope: the world's Tab ring; a focus-trapping morph (dialog)
+    // is a single stop in it and its contents are NOT descended into. With a
+    // scope (a focus-trapping morph): the stops INSIDE that scope, which is
+    // what Tab cycles through while focus is in there.
+    var result = [],
+        preferred;
     function collect(morph) {
         if (!morph.isVisible || morph.a11yIgnore) {return; }
         if (morph.isFocusable && morph.isFocusable() &&
@@ -668,18 +779,80 @@ WorldMorph.prototype.focusableMorphs = function () {
                 result.push(morph);
             }
         }
+        if (morph.a11yTrapsFocus && morph !== scope) {return; } // opaque
         morph.children.forEach(collect);
     }
-    this.children.forEach(collect);
+    if (scope) {
+        scope.children.forEach(collect);
+    } else {
+        this.children.forEach(collect);
+    }
     // order by screen position (top, then left) for a natural Tab order
     result.sort(function (a, b) {
         return a.a11yOrderKey() - b.a11yOrderKey();
     });
+    // a scope may dictate its own order (e.g. a dialog: fields, list, then
+    // buttons); anything it doesn't mention keeps its screen-order position
+    if (scope && scope.a11yTabStops) {
+        preferred = scope.a11yTabStops().filter(m => result.indexOf(m) > -1);
+        result = preferred.concat(result.filter(m => preferred.indexOf(m) < 0));
+    }
     return result;
+};
+
+WorldMorph.prototype.a11yFocusScope = function (morph) {
+    // answer the focus-trapping morph (e.g. a dialog) that contains the given
+    // morph - or, by default, the current focus (the AT focus, or the text
+    // being edited) - or null if focus is in the open world
+    var m = morph;
+    if (!m) {
+        m = this.focusedMorph;
+        if (this.a11yTextEditing && this.cursor) {
+            m = this.cursor.target;
+        }
+    }
+    while (m) {
+        if (m.a11yTrapsFocus && m.isVisible) {
+            return m;
+        }
+        m = m.parent;
+    }
+    return null;
+};
+
+WorldMorph.prototype.a11yTabStopFor = function (morph, stops) {
+    // the Tab stop that owns the given morph: itself or its nearest ancestor
+    // that is in the given list (e.g. the input field around an edited text)
+    var m = morph;
+    while (m) {
+        if (stops.indexOf(m) > -1) {
+            return m;
+        }
+        m = m.parent;
+    }
+    return null;
+};
+
+WorldMorph.prototype.a11yTabWithin = function (scope, from, backwards) {
+    // move focus to the next / previous Tab stop inside a focus-trapping
+    // scope, wrapping around at either end; answer the new stop (or null)
+    var stops = this.focusableMorphs(scope),
+        cur = this.a11yTabStopFor(from, stops),
+        idx = stops.indexOf(cur),
+        next;
+    if (!stops.length) {return null; }
+    if (idx === -1) {
+        next = backwards ? stops[stops.length - 1] : stops[0];
+    } else {
+        next = stops[(idx + (backwards ? -1 : 1) + stops.length) % stops.length];
+    }
+    this.setFocus(next, {viaKeyboard: true, force: true});
+    return next;
 };
 
 WorldMorph.prototype.handleA11yKeydown = function (event) {
     var focused = this.focusedMorph,
+        scope,
         list,
         idx,
         next;
@@ -690,8 +863,17 @@ WorldMorph.prototype.handleA11yKeydown = function (event) {
 
     // while editing text, defer to the textarea / CursorMorph path - but ONLY
     // while the hidden textarea actually holds focus; once focus has moved to a
-    // real a11y element, navigation keys belong to that element
+    // real a11y element, navigation keys belong to that element.
+    // Exception: Tab out of a text field inside a focus-trapping scope (a
+    // dialog) moves to the scope's next stop (the legacy CursorMorph path
+    // would instead hop to the next editable text anywhere in the world)
     if (this.a11yTextEditing && document.activeElement === this.keyboardHandler) {
+        if (event.key === 'Tab' && this.cursor &&
+                (scope = this.a11yFocusScope(this.cursor.target))) {
+            this.a11yTabWithin(scope, this.cursor.target, event.shiftKey);
+            event.preventDefault();
+            event.stopPropagation(); // keep it from the textarea's handler
+        }
         return;
     }
 
@@ -736,8 +918,22 @@ WorldMorph.prototype.handleA11yKeydown = function (event) {
         return;
     }
 
+    scope = this.a11yFocusScope(focused);
+
+    // Escape inside a focus-trapping scope (a dialog) is its cancel action
+    if (event.key === 'Escape' && scope && scope.a11yEscape) {
+        scope.a11yEscape(event);
+        event.preventDefault();
+        return;
+    }
+
     // Tab / Shift+Tab move through the focusable set
     if (event.key === 'Tab') {
+        if (scope) { // trapped: cycle inside the scope, never leave it
+            this.a11yTabWithin(scope, focused, event.shiftKey);
+            event.preventDefault();
+            return;
+        }
         list = this.focusableMorphs();
         if (!list.length) {return; }
         idx = list.indexOf(focused);
@@ -892,6 +1088,17 @@ MenuMorph.prototype.ariaLabel = function () {
         this.title : 'menu';
 };
 
+// a ListMorph's contents are also a MenuMorph (isListContents) - there the
+// LIST is the accessible listbox and the menu itself stays out of the tree
+MenuMorph.prototype.isFocusable = function () {
+    return !this.isListContents && Morph.prototype.isFocusable.call(this);
+};
+
+MenuMorph.prototype.createAccessibleElement = function () {
+    if (this.isListContents) {return; }
+    return Morph.prototype.createAccessibleElement.call(this);
+};
+
 // the focus ring hugs the highlighted item rather than the whole menu
 MenuMorph.prototype.a11yActiveTarget = function () {
     return this.selection || this;
@@ -1034,6 +1241,14 @@ MenuItemMorph.prototype.ariaLabel = function () {
     return null;
 };
 
+MenuItemMorph.prototype.createAccessibleElement = function () {
+    // an item inside a ListMorph is an option of that list, not a menu item
+    if (this.isListItem && this.isListItem()) {
+        this.ariaRole = 'option';
+    }
+    return Morph.prototype.createAccessibleElement.call(this);
+};
+
 MenuItemMorph.prototype.updateAccessibleElement = function () {
     Morph.prototype.updateAccessibleElement.call(this);
     if (this.a11yElement && this.action instanceof MenuMorph) {
@@ -1043,4 +1258,125 @@ MenuItemMorph.prototype.updateAccessibleElement = function () {
             this.a11yElement.setAttribute('aria-expanded', 'false');
         }
     }
+    if (this.a11yElement && this.ariaRole === 'option') {
+        this.a11yElement.setAttribute('aria-selected',
+            this.userState === 'pressed' ? 'true' : 'false');
+    }
+};
+
+// ListMorph accessibility ////////////////////////////////////////////////
+
+/*
+    A ListMorph (a scrollable list of MenuItemMorphs inside a MenuMorph that
+    is flagged isListContents) is exposed as an ARIA listbox: ONE tab stop
+    that owns its options via aria-activedescendant. Up / Down (and Home /
+    End) move the selection - selecting an item exactly like a click would,
+    so a dialog's "show details" list action runs - and Enter fires the
+    list's double-click action (e.g. a dialog's default button).
+
+    The hook below is called from a small addition inside morphic.js:
+    ListMorph.select.
+*/
+
+ListMorph.prototype.isAccessible = true;
+ListMorph.prototype.ariaRole = 'listbox';
+ListMorph.prototype.a11yFocusMode = 'activedescendant';
+
+ListMorph.prototype.accessibleItems = function () {
+    // my actual MenuItemMorphs, in order (skipping separator lines)
+    return (this.listContents ? this.listContents.children : []).filter(
+        m => m instanceof MenuItemMorph
+    );
+};
+
+ListMorph.prototype.a11yActiveItem = function () {
+    // the currently selected item, if it is (still) one of my items
+    var item = this.active;
+    return (item instanceof MenuItemMorph &&
+        this.accessibleItems().indexOf(item) > -1) ? item : null;
+};
+
+ListMorph.prototype.a11yActiveTarget = function () {
+    // the focus ring hugs the selected item, else the whole list
+    return this.a11yActiveItem() || this;
+};
+
+ListMorph.prototype.reactToFocus = function () {
+    this.updateActiveDescendant();
+};
+
+ListMorph.prototype.updateActiveDescendant = function () {
+    // mirror my selection into aria-activedescendant + aria-selected
+    // (called from select() and when I gain focus)
+    var world = this.a11yWorld(),
+        active = this.a11yActiveItem();
+    if (!this.a11yElement) {return; }
+    this.accessibleItems().forEach(item => {
+        if (item.a11yElement) {
+            item.a11yElement.setAttribute('aria-selected',
+                item === active ? 'true' : 'false');
+        }
+    });
+    if (active) {
+        active.ensureA11yId();
+        if (active.a11yElement) {
+            this.setAria('aria-activedescendant', active.a11yId);
+        }
+    } else {
+        this.setAria('aria-activedescendant', null);
+    }
+    if (world && world.focusedMorph === this) {
+        world.updateFocusRing(world.lastInputWasKeyboard);
+    }
+};
+
+ListMorph.prototype.a11ySelectItem = function (item) {
+    // select an item as if it had been clicked (pressed look + trigger), then
+    // make sure AT focus stays on me (a list action may try to move it, e.g.
+    // a dialog re-editing its search field)
+    var world = this.a11yWorld();
+    if (!item) {return; }
+    this.listContents.unselectAllItems();
+    item.userState = 'pressed';
+    item.rerender();
+    item.scrollIntoView();
+    item.trigger();
+    if (world && world.focusedMorph !== this && this.a11yElement) {
+        world.setFocus(this, {viaKeyboard: true, force: true});
+    }
+    this.updateActiveDescendant();
+};
+
+ListMorph.prototype.a11yHandleKey = function (event) {
+    var items = this.accessibleItems(),
+        n = items.length,
+        cur = items.indexOf(this.a11yActiveItem()),
+        next;
+    if (!n) {return false; }
+    switch (event.keyCode) {
+    case 38: // up
+        next = (cur <= 0) ? 0 : cur - 1;
+        break;
+    case 40: // down
+        next = (cur < 0) ? 0 : Math.min(cur + 1, n - 1);
+        break;
+    case 36: // home
+        next = 0;
+        break;
+    case 35: // end
+        next = n - 1;
+        break;
+    case 13: // enter: the double-click action (e.g. a dialog's default)
+        if (cur > -1 && items[cur].doubleClickAction) {
+            items[cur].triggerDoubleClick();
+            return true;
+        }
+        return false;
+    default:
+        return false;
+    }
+    if (next !== cur) {
+        this.a11ySelectItem(items[next]);
+    }
+    return true;
 };

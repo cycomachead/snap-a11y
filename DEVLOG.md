@@ -2,6 +2,21 @@
 
 ## in development:
 
+### 2026-10-08 — proposal: an accessibility API for Snap!/Morphic
+* added docs/A11Y-API-PROPOSAL.md: an audit of every place the parallel-DOM
+  layer has to patch core files (tree hooks in morphic.js, widget refresh
+  hooks, pane re-tagging on fixLayout, constructor.name slot checks, the
+  showBubble / searchBlocks / ScriptFocusMorph wrappers, the load-order
+  constraint) and the interface Snap! and Morphic should expose instead:
+  Tier 0 core fixes (menu `world` property, copy hook, keyboard-focus
+  setter, key dispatcher, tree/geometry notifications, module init hooks),
+  Tier 1 semantic protocol (accessibleRole/Name/State on widgets,
+  speakableText() and slot predicates on blocks, symbol alt text, per-
+  primitive names, pane list), Tier 2 world/IDE observers, Tier 3 keyboard
+  interaction model (programmatic grab/drop, context menus, splitters,
+  dialog traps); plus a suggested upstream PR sequence
+* docs/ACCESSIBILITY.md §3.11 and docs/README.md link to it
+
 ### 2026-08-13 — merge the parallel-DOM screen-reader prototype
 * merged the morphic-a11y-prototype branch: src/accessibility.js now
   mirrors opted-in morphs into a parallel, invisible DOM tree (roving

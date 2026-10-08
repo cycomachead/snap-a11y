@@ -167,7 +167,9 @@ Everything below remains; the parallel DOM effort has not started.
     wire it into CI, and run a recurring manual screen reader protocol.
 11. **Upstreaming strategy.** Keep morphic.js changes additive and behind a
     small API so the work can be proposed upstream to jmoenig/Snap in
-    reviewable pieces.
+    reviewable pieces. The concrete proposal for that API (what Snap! and
+    Morphic should expose so this layer becomes a plug-in module instead of
+    a set of source patches) is in [A11Y-API-PROPOSAL.md](A11Y-API-PROPOSAL.md).
 
 ## 4. Plan of action (phases)
 

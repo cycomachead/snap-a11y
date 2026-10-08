@@ -38,6 +38,11 @@
   listeners on nested elements reacted to their descendants' events too
   (focusing a toolbar button made its region the focused morph; Enter on a
   dialog button re-activated the already-closed dialog)
+* the focus ring stays clear of scroll bars: when the ring hugs an item
+  inside a ScrollFrameMorph (a project / library in a dialog's list spans
+  the frame's full width), the ring box is clipped to leave a 2px gap
+  before any visible vertical or horizontal scroll bar
+  (WorldMorph.a11yAvoidScrollBars)
 * focus no longer falls off to <body>: destroying a morph whose element (or
   a child's) holds native focus hands focus back to the hidden textarea,
   and orderAccessibleRegions re-focuses the element it moved (re-appending

@@ -984,6 +984,7 @@ WorldMorph.prototype.updateFocusRing = function (viaKeyboard) {
         return;
     }
     box = ringTarget.visibleBounds().expandBy(this.focusRingPadding);
+    box = this.a11yAvoidScrollBars(ringTarget, box);
     // round the ring to match the target's own corner radius (buttons round)
     ring.cornerRadius = (typeof ringTarget.corner === 'number' ?
             ringTarget.corner : 4) + this.focusRingPadding;
@@ -998,6 +999,32 @@ WorldMorph.prototype.updateFocusRing = function (viaKeyboard) {
         this.add(ring);
     }
     ring.changed();
+};
+
+WorldMorph.prototype.a11yAvoidScrollBars = function (target, box) {
+    // keep the ring clear of any enclosing scroll frame's scroll bars: an
+    // item in a scrolling list (e.g. a project in the Open dialog) spans the
+    // frame's full width, so the plain ring would be drawn on top of the
+    // vertical bar (and, on the last visible line, the horizontal one).
+    // Shrink the box so there's a tiny gap between the ring and each bar.
+    var gap = 2,
+        m = target.parent;
+    while (m) {
+        if (m instanceof ScrollFrameMorph) {
+            if (m.vBar && m.vBar.isVisible &&
+                    box.corner.x > m.vBar.left() - gap &&
+                    box.origin.x < m.vBar.left() - gap) {
+                box.corner.x = m.vBar.left() - gap;
+            }
+            if (m.hBar && m.hBar.isVisible &&
+                    box.corner.y > m.hBar.top() - gap &&
+                    box.origin.y < m.hBar.top() - gap) {
+                box.corner.y = m.hBar.top() - gap;
+            }
+        }
+        m = m.parent;
+    }
+    return box;
 };
 
 // FocusIndicatorMorph ////////////////////////////////////////////////////

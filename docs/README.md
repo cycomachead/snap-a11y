@@ -32,6 +32,12 @@ You can write JavaScript files which provide additional blocks, add interface el
 
 The Snap! API can be used to embed or customize Snap! to be used in unique environments. You can check out the (work in progress) [Pyret example](../pyret/inline.html).
 
+### [Accessibility extension API proposal](./Accessibility-Extension-API.md)
+
+Source-grounded recommendations for Morphic lifecycle, focus, and semantic
+hooks and Snap! editor events that would simplify the accessibility adapter.
+This is a proposal, not an implemented extension API.
+
 ### [Offline.md](./Offline.md)
 
 This describes how you can distribute Snap! to work offline.

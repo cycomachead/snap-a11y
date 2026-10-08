@@ -2,6 +2,13 @@
 
 *Baseline audited: upstream Snap! v12.0.6 (commit `3a2fe919`), August 2026.*
 
+**Historical baseline:** the parallel-DOM prototype has since been merged.
+Sections describing it as absent record the original audit, not the current
+checkout. See the [prototype handoff](../accessibility-prototype.md) and the
+[extension API proposal](Accessibility-Extension-API.md) for existing
+integration points and recommended upstream changes. The proposal does not
+revise the target DOM contract below.
+
 This document is the working plan for making Snap! fully screen reader
 compatible using a **parallel DOM** and providing **full keyboard support**
 for the IDE. It records what exists today, what remains, the phased plan,

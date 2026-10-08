@@ -2,6 +2,15 @@
 
 ## in development:
 
+### 2026-10-08 — accessibility extension API proposal
+* documented existing integration points and proposed Morphic lifecycle,
+  semantics, focus, and disposal contracts, plus Snap! editor events,
+  block descriptions, commands, and UI-adapter registration
+* prioritized replacing the result and script-focus method wrappers as the
+  first upstream slice, with migration and behavioral acceptance criteria
+* linked the proposal from the developer guide and marked the accessibility
+  audit's pre-prototype baseline explicitly; no runtime API changes
+
 ### 2026-08-13 — merge the parallel-DOM screen-reader prototype
 * merged the morphic-a11y-prototype branch: src/accessibility.js now
   mirrors opted-in morphs into a parallel, invisible DOM tree (roving

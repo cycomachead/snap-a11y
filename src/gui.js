@@ -87,11 +87,11 @@ HatBlockMorph, ZOOM*/
 
 // Global stuff ////////////////////////////////////////////////////////
 
-modules.gui = '2026-August-08';
+modules.gui = '2026-October-23';
 
 // Declarations
 
-var SnapVersion = '12.1.0-dev-260808';
+var SnapVersion = '12.3.6';
 
 var IDE_Morph;
 var ProjectDialogMorph;
@@ -346,6 +346,7 @@ IDE_Morph.prototype.init = function (config) {
     this.stageHandle = null;
     this.corralBar = null;
     this.corral = null;
+    this.zoomBar = null;
 
     this.embedPlayButton = null;
     this.embedOverlay = null;
@@ -1055,6 +1056,7 @@ IDE_Morph.prototype.buildPanes = function () {
     this.createSpriteEditor();
     this.createCorralBar();
     this.createCorral();
+    this.createZoomBar();
 };
 
 IDE_Morph.prototype.createLogo = function () {
@@ -1620,6 +1622,7 @@ IDE_Morph.prototype.createControlBar = function () {
 
     this.controlBar.refreshSlider = function () {
         if (Process.prototype.enableSingleStepping && !myself.isAppMode) {
+            slider.value = Process.prototype.flashTime * 100 + 1;
             slider.fixLayout();
             slider.rerender();
             slider.show();
@@ -1696,6 +1699,13 @@ IDE_Morph.prototype.createControlBar = function () {
         );
         this.label.setCenter(this.center());
         this.label.setLeft(this.settingsButton.right() + padding);
+
+        this.label.mouseClickLeft = function () {
+            if (myself.hasUnsavedEdits()) {
+                myself.save();
+            }
+        };
+
         this.add(this.label);
     };
 };
@@ -2611,6 +2621,56 @@ IDE_Morph.prototype.createCorralBar = function () {
         }
     };
 
+    this.corralBar.userMenu = () => {
+        var menu = new MenuMorph(sprite => {
+                sprite.isHiddenInCorral = !sprite.isHiddenInCorral;
+                this.createCorral(false); // re-create scenes
+                this.fixLayout();
+            }),
+            on = new SymbolMorph(
+                'checkedBox',
+                MorphicPreferences.menuFontSize * 0.75
+            ),
+            off = new SymbolMorph(
+                'rectangle',
+                MorphicPreferences.menuFontSize * 0.75
+            );
+
+        menu.addItem(
+            [
+                this.stage.isHiddenInCorral ? off : on,
+                this.stage.name
+            ],
+            this.stage
+        );
+        if (this.sprites.length() > 1) {
+            menu.addLine();
+        }
+        this.sprites.asArray().forEach(sprite =>
+            menu.addItem(
+                [
+                    sprite.isHiddenInCorral ? off : on,
+                    sprite.name
+                ],
+                sprite
+            )
+        );
+        if (this.scenes.length() > 1) {
+            menu.addLine();
+            menu.addSectionLabel('Scenes');
+            this.scenes.asArray().forEach(scene =>
+                menu.addItem(
+                    [
+                        scene.isHiddenInCorral ? off : on,
+                        scene.name || localize('untitled')
+                    ],
+                    scene
+                )
+            );
+        }
+        return menu;
+    };
+
     this.corralBar.fixLayout = function () {
         function updateDisplayOf(button) {
             if (button && button.right() > trashbutton.left() - padding) {
@@ -2647,6 +2707,9 @@ IDE_Morph.prototype.createCorral = function (keepSceneAlbum) {
     this.corral.stageIcon = new SpriteIconMorph(this.stage);
     this.corral.stageIcon.isDraggable = false;
     this.corral.add(this.corral.stageIcon);
+    if (this.stage.isHiddenInCorral) {
+        this.corral.stageIcon.hide();
+    }
 
     frame = new ScrollFrameMorph(null, null, this.sliderColor);
     frame.acceptsDrops = false;
@@ -2660,7 +2723,7 @@ IDE_Morph.prototype.createCorral = function (keepSceneAlbum) {
     frame.alpha = 0;
 
     this.sprites.asArray().forEach(morph => {
-        if (!morph.isTemporary) {
+        if (!morph.isTemporary && !morph.isHiddenInCorral) {
             frame.contents.add(new SpriteIconMorph(morph));
         }
     });
@@ -2679,7 +2742,11 @@ IDE_Morph.prototype.createCorral = function (keepSceneAlbum) {
         this.stageIcon.setLeft(this.left() + padding);
 
         // scenes
-        if (myself.tutorial || myself.scenes.length() < 2) {
+        if (
+            myself.tutorial ||
+            myself.scenes.asArray().filter(scn =>
+                !scn.isHiddenInCorral).length < 2
+        ) {
             this.album.hide();
         } else {
             this.stageIcon.setTop(this.top());
@@ -2752,6 +2819,42 @@ IDE_Morph.prototype.createCorral = function (keepSceneAlbum) {
         myself.createCorral(true); // keep scenes
         myself.fixLayout();
     };
+};
+
+IDE_Morph.prototype.createZoomBar = function () {
+    var shade = new Color(140, 140, 140),
+        inButton, outButton;
+
+
+    this.zoomBar = new AlignmentMorph('row');
+
+    outButton = new PushButtonMorph(
+        this,
+        "zoomOut",
+        new SymbolMorph("magnifierMinus", 28)
+    );
+    outButton.alpha = 0.2;
+    outButton.padding = 0;
+    // outButton.hint = localize('zoom out') + '...';
+    outButton.labelShadowColor = shade;
+    outButton.edge = 0;
+    outButton.fixLayout();
+    this.zoomBar.add(outButton);
+
+    inButton = new PushButtonMorph(
+        this,
+        "zoomIn",
+        new SymbolMorph("magnifierPlus", 28)
+    );
+    inButton.alpha = 0.2;
+    inButton.padding = 0;
+    // inButton.hint = localize('zoom in') + '...';
+    inButton.labelShadowColor = shade;
+    inButton.edge = 0;
+    inButton.fixLayout();
+    this.zoomBar.add(inButton);
+
+    this.zoomBar.fixLayout();
 };
 
 // IDE_Morph layout
@@ -2938,6 +3041,13 @@ IDE_Morph.prototype.fixLayout = function (situation) {
             this.corral.setHeight(this.bottom() - this.corral.top() - border);
             this.corral.fixLayout();
         }
+    }
+
+    // zoomBar
+    if (this.zoomBar.isVisible) {
+        this.world().add(this.zoomBar); // bring to front
+        this.zoomBar.setRight(this.right() - MorphicPreferences.scrollBarSize);
+        this.zoomBar.setBottom(this.bottom());
     }
 
     // adjust the global zoom if necessary
@@ -4392,6 +4502,16 @@ IDE_Morph.prototype.mouseDoubleClick = function () {
     }
 };
 
+IDE_Morph.prototype.zoomIn = function () {
+    var interval = 10;
+    this.setZoom(Math.floor(ZOOM * interval) * interval + interval);
+};
+
+IDE_Morph.prototype.zoomOut = function () {
+    var interval = 10;
+    this.setZoom(Math.ceil(ZOOM * interval) * interval - interval);
+};
+
 // IDE_Morph button actions
 
 IDE_Morph.prototype.refreshPalette = function (shouldIgnorePosition) {
@@ -5300,7 +5420,9 @@ IDE_Morph.prototype.removeSprite = function (sprite, enableUndelete = true) {
     this.fixLayout();
     this.currentSprite = detect(
         this.stage.children,
-        morph => morph instanceof SpriteMorph && !morph.isTemporary
+        morph => morph instanceof SpriteMorph &&
+            !morph.isTemporary &&
+            !morph.isHiddenInCorral
     ) || this.stage;
 
     this.selectSprite(this.currentSprite);
@@ -6217,7 +6339,7 @@ IDE_Morph.prototype.projectMenu = function () {
             if (shiftClicked) {
                 menu.addItem(
                     'Remove template',
-                    () => this.scene.template = null,
+                    () => this.scene.refreshTemplate(),
                     '"' + this.scene.template.name + '"',
                     new Color(100, 0, 0)
                 );
@@ -6238,7 +6360,7 @@ IDE_Morph.prototype.projectMenu = function () {
             menu.addItem(
                 'Generate puzzle',
                 'generatePuzzle',
-                'generate a Parson\'s Puzzle\n' +
+                'generate a Parsons Puzzle\n' +
                     'from the current sprite'
             );
         }
@@ -6446,7 +6568,6 @@ IDE_Morph.prototype.importMedia = function (folderName) {
 
 };
 
-
 IDE_Morph.prototype.popupMediaImportDialog = function (folderName, items) {
     // private - this gets called by importMedia() and creates
     // the actual dialog
@@ -6457,11 +6578,15 @@ IDE_Morph.prototype.popupMediaImportDialog = function (folderName, items) {
         turtle = new SymbolMorph('turtle', 60),
         myself = this,
         world = this.world(),
-        // fetch categories from Costumes/COSTUME-categories.json
-        categories = JSON.parse(this.getURL(this.resourceURL('Costumes', 'COSTUME-categories.json'))),
-        selectedCategory = categories[0],
-        filteredItems = [... new Set(items.filter(item => item.category === selectedCategory))],
+        categories = Array.from(new Set(items.map(each =>
+            each.category).filter(each => isString(each)))).sort((a, b) =>
+                localize(a) > localize(b) ? 1 : -1),
+        hasCategories = categories.length > 0,
+        selectedCategory,
         handle;
+    if (hasCategories) {
+        categories.unshift('All');
+    }
     frame.acceptsDrops = false;
     frame.contents.acceptsDrops = false;
     frame.color = myself.groupColor;
@@ -6495,19 +6620,17 @@ IDE_Morph.prototype.popupMediaImportDialog = function (folderName, items) {
     };
 
     categories.forEach(category => {
-        let button = new PushButtonMorph(
-            null,
-            function () { 
-                selectedCategory = category;
-                filteredItems = [... new Set(items.filter(item => item.category === selectedCategory))];
-                renderItems(filteredItems);
-            }, 
-                category
+        let button = new ToggleButtonMorph(
+            null, // colors
+            null, // target
+            () => selectCategory(category), // action
+            category, // label
+            () => selectedCategory === category // query
         );
+
         categoryBar.add(button);
     });
 
-    
     dialog.fixLayout = function () {
         var th = fontHeight(this.titleFontSize) + this.titlePadding * 2,
             x = 0,
@@ -6530,22 +6653,20 @@ IDE_Morph.prototype.popupMediaImportDialog = function (folderName, items) {
         const spacing = 4;
 
         categoryBar.children.forEach(function (button) {
-            button.setPosition(fp.add(new Point(bx, by)));
-
-            bx += button.width() + spacing;
-
             if (bx + button.width() > fw) {
                 bx = 0;
                 by += button.height() + spacing;
             }
+            button.setPosition(fp.add(new Point(bx, by)));
+            bx += button.width() + spacing;
         });
-
-        categoryBar.setExtent(new Point(
-            fw,
-            by + categoryBar.children[0].height() + spacing
-        ));
+        if (hasCategories) {
+            by += categoryBar.children[0].height();
+            by += spacing;
+        }
+        categoryBar.setExtent(new Point(fw, by));
         categoryBar.color = dialog.color;
-        y = by + categoryBar.children[0].height() + 10;
+        y = by;
 
         frame.contents.children.forEach(function (icon) {
             if (icon === categoryBar) { return; }
@@ -6566,6 +6687,20 @@ IDE_Morph.prototype.popupMediaImportDialog = function (folderName, items) {
         this.removeShadow();
         this.addShadow();
     };
+
+    function selectCategory (name) {
+        var filteredItems;
+        selectedCategory = name;
+        if (name === 'All') {
+            filteredItems = items;
+        } else {
+            filteredItems = [... new Set(items.filter(item =>
+                item.category === name))];
+        }
+        categoryBar.children.forEach(button => button.refresh());
+        renderItems(filteredItems);
+    }
+
     function renderItems (items) {
         frame.contents.children
             .filter(child => child !== categoryBar)
@@ -6621,7 +6756,8 @@ IDE_Morph.prototype.popupMediaImportDialog = function (folderName, items) {
                 );
             } else {
                 img.onload = function () {
-                    var canvas = newCanvas(new Point(img.width, img.height), true);
+                    var canvas = newCanvas(
+                        new Point(img.width, img.height), true);
                     canvas.getContext('2d').drawImage(img, 0, 0);
                     icon.object = new Costume(canvas, item.name);
                     icon.createThumbnail();
@@ -6631,13 +6767,11 @@ IDE_Morph.prototype.popupMediaImportDialog = function (folderName, items) {
             }
         });
         dialog.fixLayout();
-    };
-    if (folderName !== 'Costumes') {
-        filteredItems = items;
     }
-    renderItems(filteredItems);
+
+    selectCategory('All');
     dialog.popUp(world);
-    dialog.setExtent(new Point(400, 300));
+    dialog.setExtent(new Point(480, 300));
     dialog.setCenter(world.center());
 
     handle = new HandleMorph(
@@ -6691,8 +6825,10 @@ IDE_Morph.prototype.undelete = function (aSprite, pos) {
             aSprite.fixLayout();
             aSprite.rerender();
             this.sprites.add(aSprite);
-            this.corral.addSprite(aSprite);
-            this.selectSprite(aSprite);
+            if (!aSprite.isHiddenInCorral) {
+                this.corral.addSprite(aSprite);
+                this.selectSprite(aSprite);
+            }
             this.scene.updateTrash();
         }
     );
@@ -7401,7 +7537,7 @@ IDE_Morph.prototype.generatePuzzle = function () {
         m instanceof BlockMorph
     ).forEach(b => b.destroy());
 
-    // store the solution inside the puzzlem
+    // store the solution inside the puzzle
     // and remove the solution from the stage
     puzzle.solution = current;
     this.removeSprite(current, false); // disable undelete
@@ -8252,7 +8388,7 @@ IDE_Morph.prototype.openProject = function (project, purgeCustomizedPrims) {
     if (purgeCustomizedPrims) {
         scn.blocks = SpriteMorph.prototype.primitiveBlocks();
     }
-    if (scn.createdFromTemplate) {
+    if (scn.createdFromTemplate || scn.template.tutor) {
         // switch to edit mode, unless when
         this.toggleAppMode(false);
         // launch tutorial, if any exist
@@ -8735,7 +8871,8 @@ IDE_Morph.prototype.toggleAppMode = function (appMode) {
             this.spriteEditor,
             this.spriteBar,
             this.palette,
-            this.categories
+            this.categories,
+            this.zoomBar
         ];
 
     this.isAppMode = isNil(appMode) ? !this.isAppMode : appMode;
@@ -9710,7 +9847,7 @@ IDE_Morph.prototype.projectSettingsMenu = function () {
 
 IDE_Morph.prototype.templateSettingsMenu = function () {
     var menu = new MenuMorph(this),
-        settings = ['lang', 'zoom', 'scale', 'fade', 'flat', 'bright'],
+        settings = ['tutor', 'lang', 'zoom', 'scale', 'fade', 'flat', 'bright'],
         tick = new SymbolMorph(
             'tick',
             MorphicPreferences.menuFontSize * 0.75
@@ -9764,6 +9901,17 @@ IDE_Morph.prototype.templateSettingsMenu = function () {
 
     menu.addLine();
 
+    menu.addPreference(
+        'Tutorial',
+        () => {
+            if (this.scene.template.tutor === undefined) {
+                this.scene.template.tutor = null;
+            } else {
+                delete this.scene.template.tutor;
+            }
+        },
+        this.scene.template.tutor !== undefined
+    );
     menu.addPreference(
         'Language',
         () => {
@@ -13805,7 +13953,7 @@ CostumeIconMorph.prototype.duplicateCostume = function () {
 CostumeIconMorph.prototype.removeCostume = function () {
     var wardrobe = this.parentThatIsA(WardrobeMorph),
         idx = this.parent.children.indexOf(this),
-        off = CamSnapshotDialogMorph.prototype.enableCamera ? 3 : 2;
+        off = CamSnapshotDialogMorph.prototype.enableCamera ? 4 : 3;
     wardrobe.removeCostumeAt(idx - off); // ignore paintbrush and camera buttons
     if (wardrobe.sprite.costume === this.object) {
         wardrobe.sprite.wearCostume(null);
@@ -13867,7 +14015,7 @@ CostumeIconMorph.prototype.disinherit = function () {
         idx = this.parent.children.indexOf(this);
     if (wardrobe.sprite.inheritsAttribute('costumes')) {
         wardrobe.sprite.shadowAttribute('costumes');
-        this.object = wardrobe.sprite.costumes.at(idx - 3);
+        this.object = wardrobe.sprite.costumes.at(idx - 4);
     }
 };
 
@@ -14105,6 +14253,7 @@ WardrobeMorph.prototype.updateList = function () {
         oldPos = this.contents.position(),
         icon,
         txt,
+        shapesbutton,
         paintbutton,
         cambutton;
 
@@ -14123,6 +14272,30 @@ WardrobeMorph.prototype.updateList = function () {
     this.addContents(icon);
     y = icon.bottom() + padding;
 
+    shapesbutton = new PushButtonMorph(
+        this,
+        "importNew",
+        new SymbolMorph("picture", 15)
+    );
+
+    shapesbutton.padding = 0;
+    shapesbutton.corner = 12;
+    shapesbutton.color = IDE_Morph.prototype.groupColor;
+    shapesbutton.highlightColor = IDE_Morph.prototype.frameColor;
+    shapesbutton.pressColor = shapesbutton.highlightColor;
+    shapesbutton.labelMinExtent = new Point(36, 18);
+    shapesbutton.labelShadowOffset = new Point(-1, -1);
+    shapesbutton.labelShadowColor = shapesbutton.highlightColor;
+    shapesbutton.labelColor = TurtleIconMorph.prototype.labelColor;
+    shapesbutton.contrast = this.buttonContrast;
+    shapesbutton.hint = "Select a costume from the media library";
+    shapesbutton.setPosition(new Point(x, y));
+    shapesbutton.fixLayout();
+    shapesbutton.setCenter(icon.center());
+    shapesbutton.setLeft(icon.right() + padding * 4);
+
+    this.addContents(shapesbutton);
+
     paintbutton = new PushButtonMorph(
         this,
         "paintNew",
@@ -14131,7 +14304,7 @@ WardrobeMorph.prototype.updateList = function () {
     paintbutton.padding = 0;
     paintbutton.corner = 12;
     paintbutton.color = IDE_Morph.prototype.groupColor;
-    paintbutton.highlightColor = IDE_Morph.prototype.frameColor.darker(50);
+    paintbutton.highlightColor = IDE_Morph.prototype.frameColor;
     paintbutton.pressColor = paintbutton.highlightColor;
     paintbutton.labelMinExtent = new Point(36, 18);
     paintbutton.labelShadowOffset = new Point(-1, -1);
@@ -14142,7 +14315,7 @@ WardrobeMorph.prototype.updateList = function () {
     paintbutton.setPosition(new Point(x, y));
     paintbutton.fixLayout();
     paintbutton.setCenter(icon.center());
-    paintbutton.setLeft(icon.right() + padding * 4);
+    paintbutton.setLeft(shapesbutton.right() + padding);
 
     this.addContents(paintbutton);
 
@@ -14155,7 +14328,7 @@ WardrobeMorph.prototype.updateList = function () {
         cambutton.padding = 0;
         cambutton.corner = 12;
         cambutton.color = IDE_Morph.prototype.groupColor;
-        cambutton.highlightColor = IDE_Morph.prototype.frameColor.darker(50);
+        cambutton.highlightColor = IDE_Morph.prototype.frameColor;
         cambutton.pressColor = paintbutton.highlightColor;
         cambutton.labelMinExtent = new Point(36, 18);
         cambutton.labelShadowOffset = new Point(-1, -1);
@@ -14237,6 +14410,17 @@ WardrobeMorph.prototype.removeCostumeAt = function (idx) {
     this.sprite.shadowAttribute('costumes');
     this.sprite.costumes.remove(idx);
     this.updateList();
+};
+
+WardrobeMorph.prototype.importNew = function () {
+    var ide = this.parentThatIsA(IDE_Morph),
+        graphicsName = ide.currentSprite instanceof SpriteMorph ?
+                'Costumes' : 'Backgrounds';
+    if (location.protocol === 'file:') {
+        ide.importLocalFile();
+        return;
+    }
+    ide.importMedia(graphicsName);
 };
 
 WardrobeMorph.prototype.paintNew = function () {
@@ -14515,7 +14699,7 @@ SoundIconMorph.prototype.renameSound = function () {
 
 SoundIconMorph.prototype.removeSound = function () {
     var jukebox = this.parentThatIsA(JukeboxMorph),
-        idx = this.parent.children.indexOf(this) - 1;
+        idx = this.parent.children.indexOf(this) - 2;
     jukebox.removeSound(idx);
     jukebox.sprite.recordUserEdit(
         'sound',
@@ -14543,7 +14727,7 @@ SoundIconMorph.prototype.disinherit = function () {
         idx = this.parent.children.indexOf(this);
     if (jukebox.sprite.inheritsAttribute('sounds')) {
         jukebox.sprite.shadowAttribute('sounds');
-        this.object = jukebox.sprite.sounds.at(idx - 1);
+        this.object = jukebox.sprite.sounds.at(idx - 2);
     }
 };
 
@@ -14597,6 +14781,7 @@ JukeboxMorph.prototype.updateList = function () {
         icon,
         txt,
         ide = this.sprite.parentThatIsA(IDE_Morph),
+        importButton,
         recordButton;
 
     this.changed();
@@ -14615,15 +14800,36 @@ JukeboxMorph.prototype.updateList = function () {
     txt.setPosition(new Point(x, y));
     this.addContents(txt);
 
+    importButton = new PushButtonMorph(
+        this,
+        'importNew',
+        new SymbolMorph('notes', 15)
+    );
+    importButton.padding = 0;
+    importButton.corner = 12;
+    importButton.color = IDE_Morph.prototype.groupColor;
+    importButton.highlightColor = IDE_Morph.prototype.frameColor;
+    importButton.pressColor = importButton.highlightColor;
+    importButton.labelMinExtent = new Point(36, 18);
+    importButton.labelShadowOffset = new Point(-1, -1);
+    importButton.labelShadowColor = importButton.highlightColor;
+    importButton.labelColor = TurtleIconMorph.prototype.labelColor;
+    importButton.contrast = this.buttonContrast;
+    importButton.hint = 'Select a sound from the media library';
+    importButton.fixLayout();
+    importButton.setPosition(txt.bottomLeft().add(new Point(0, padding * 2)));
+
+    this.addContents(importButton);
+
     recordButton = new PushButtonMorph(
         ide,
         'recordNewSound',
-        new SymbolMorph('circleSolid', 15)
+        new SymbolMorph('microphone', 15)
     );
     recordButton.padding = 0;
     recordButton.corner = 12;
     recordButton.color = IDE_Morph.prototype.groupColor;
-    recordButton.highlightColor = IDE_Morph.prototype.frameColor.darker(50);
+    recordButton.highlightColor = IDE_Morph.prototype.frameColor;
     recordButton.pressColor = recordButton.highlightColor;
     recordButton.labelMinExtent = new Point(36, 18);
     recordButton.labelShadowOffset = new Point(-1, -1);
@@ -14632,9 +14838,9 @@ JukeboxMorph.prototype.updateList = function () {
     recordButton.contrast = this.buttonContrast;
     recordButton.hint = 'Record a new sound';
     recordButton.fixLayout();
-    recordButton.label.setColor(new Color(255, 20, 20));
     recordButton.setPosition(txt.bottomLeft().add(new Point(0, padding * 2)));
-
+    recordButton.setPosition(txt.bottomLeft().add(new Point(0, padding * 2)));
+    recordButton.setLeft(importButton.right() + padding);
     this.addContents(recordButton);
 
     y = recordButton.bottom() + padding;
@@ -14676,6 +14882,15 @@ JukeboxMorph.prototype.step = function () {
 JukeboxMorph.prototype.removeSound = function (idx) {
     this.sprite.sounds.remove(idx);
     this.updateList();
+};
+
+JukeboxMorph.prototype.importNew = function () {
+    var ide = this.parentThatIsA(IDE_Morph);
+    if (location.protocol === 'file:') {
+        ide.importLocalFile();
+        return;
+    }
+    ide.importMedia('Sounds');
 };
 
 // Jukebox drag & drop
@@ -15021,13 +15236,15 @@ SceneAlbumMorph.prototype.updateList = function () {
     this.addBack(this.contents);
 
     this.ide.scenes.asArray().forEach((scene, i) => {
-        icon = new SceneIconMorph(scene);
-        if (i < 1) {
-            icon.isDraggable = false; // project scene cannot be rearranged
+        if (!scene.isHiddenInCorral) {
+            icon = new SceneIconMorph(scene);
+            if (i < 1) {
+                icon.isDraggable = false; // project scene cannot be rearranged
+            }
+            icon.setPosition(new Point(x, y));
+            this.addContents(icon);
+            y = icon.bottom() + padding;
         }
-        icon.setPosition(new Point(x, y));
-        this.addContents(icon);
-        y = icon.bottom() + padding;
     });
     this.version = this.ide.scenes.lastChanged;
 
@@ -15058,10 +15275,15 @@ SceneAlbumMorph.prototype.step = function () {
     }
 };
 
-// Wardrobe ops
+// SceneAlbumMorph ops
 
 SceneAlbumMorph.prototype.removeSceneAt = function (idx) {
     this.ide.scenes.remove(idx);
+    if (this.ide.scenes.length() < 2) {
+        this.ide.createCorral(false); // re-create scenes
+        this.ide.fixLayout();
+        return;
+    }
     this.updateList();
 };
 
@@ -15325,7 +15547,7 @@ CamSnapshotDialogMorph.prototype.notSupportedMessage =
 	'Some browsers also require you to access Snap!\n' +
 	'through HTTPS to use the camera.\n\n' +
     'Please replace the "http://" part of the address\n' +
-    'in your browser by "https://" and try again.';
+    'in your browser by "https://" and refresh the page.';
 
 // CamSnapshotDialogMorph instance creation
 

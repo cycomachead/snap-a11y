@@ -1,0 +1,59 @@
+.execution-log {
+    position: fixed;
+    inset: 0 0 0 auto;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+    border-left: 1px solid #c7cdd7;
+    background: #f5f6f9;
+    color: #202b3d;
+    font: 14px/1.5 Helvetica, Arial, sans-serif;
+}
+.execution-log[hidden] { display: none; }
+.execution-log-stacked { inset: auto 0 0; border-top: 1px solid #c7cdd7; }
+.execution-log-header { padding: 16px; border-bottom: 1px solid #d5dae2; background: white; }
+.execution-log h2 { margin: 0 0 10px; font-size: 19px; }
+.execution-log-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.execution-log button {
+    border: 1px solid #a6afbf;
+    border-radius: 5px;
+    background: white;
+    color: #24354d;
+    padding: 5px 8px;
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+}
+.execution-log button:hover { background: #eaf1fc; }
+.execution-log :focus-visible { outline: 3px solid #1959c2; outline-offset: 2px; }
+.execution-log-cells { overflow: auto; flex: 1; min-height: 0; padding: 14px; }
+.execution-log-empty { padding: 24px 14px; color: #526078; }
+.execution-log-cell {
+    padding: 12px;
+    margin-bottom: 14px;
+    border: 1px solid #d5dae2;
+    border-left: 3px solid #4775bb;
+    border-radius: 6px;
+    background: white;
+}
+.execution-log-cell-title { display: flex; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+.execution-log-cell-title strong { overflow-wrap: anywhere; }
+.execution-log-state { font-size: 12px; color: #526078; }
+.execution-log-cell[data-status=error] { border-left-color: #ad3030; }
+.execution-log button.execution-log-script {
+    display: block;
+    max-width: 100%;
+    margin: 0 0 12px;
+    padding: 8px;
+    overflow: auto;
+    background: #f7f8fb;
+    cursor: grab;
+}
+.execution-log-script img { display: block; max-width: none; }
+.execution-log-output { margin-top: 14px; border-top: 1px solid #e1e5eb; padding-top: 10px; }
+.execution-log-output-label { color: #526078; font-size: 12px; margin-bottom: 5px; }
+.execution-log-output pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 6px 0 10px; }
+.execution-log-output img, .execution-log-output audio { display: block; max-width: 100%; margin-bottom: 10px; }
+.execution-log-no-output { color: #526078; font-size: 12px; }
+.execution-log-announcer { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }

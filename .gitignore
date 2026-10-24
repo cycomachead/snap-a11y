@@ -5,8 +5,8 @@
 
 # Accessibility test harness (tests/)
 node_modules/
-/tests/test-results/
-/tests/playwright-report/
+test-results/
+playwright-report/
 /tests/.last-run.json
 
 # Compressed files for server performance

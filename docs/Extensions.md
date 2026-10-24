@@ -181,3 +181,10 @@ frown on you but not reject your contribution).
 ## Examples
 
 SciSnap v2, TuneScope, and MQTT are some of the libraries that make excellent use of extensions APIs.
+
+
+### Default-loaded Execution Log
+
+This fork includes an IDE extension that records script executions and
+exportable results in a notebook. See [ExecutionLog.md](ExecutionLog.md)
+for settings, script restoration, export formats, and lifecycle.

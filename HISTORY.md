@@ -1,27 +1,414 @@
 # Snap! (BYOB) History
 
 ## in development:
+
+## 12.3.6:
+* **Notable Fixes:**
+    * fixed displaying intermediate ADT results in visible stepping
+
+### 2026-10-23
+* threads: fixed a visible stepping intermediate-result-inspection bug
+* threads: fixed displaying intermediate results that are ADTs with their own visualizations method
+* prepared v12.3.6 patch
+
+## 12.3.5:
+* **Notable Fixes:**
+    * fixed using turtle-sprite clones in tutorial windows
+
+### 2026-10-21
+* objects: fixed using turtle-sprite clones in tutorial windows
+* prepared v12.3.5 patch
+
+## 12.3.4:
+* **Notable Fixes:**
+    * fixed a custom drop-down menu localization glitch
+* **Notable Changes:**
+    * reworded the "camera unsupported" message to include refreshing the page
+* **Translation Updates:**
+    * German
+
+### 2026-10-20
+* byob: fixed a custom drop-down menu localization glitch
+* gui: reworded the "camera unsupported" message to include refreshing the page
+* German translation update for the "camera unsupported" message
+* prepared v12.3.4 patch
+
+## 12.3.3:
+* **Notable Changes:**
+    * updated the variables declaration library ("let"), added WARP for performance
+    * updated the presentations library, merged the "buttons" command into the "presentation" block
+    * tweaked corral bar context menu, included section heading for "scenes"
+    * added "blank" symbol
+* **Translation Updates:**
+    * German
+
+### 2026-10-19
+* new dev version for v12.3.3
+* symbols: added "blank" symbol
+* German translation update (for text layout terms)
+* updated the variables declaration library ("let"), added WARP for performance
+* updated the presentations library, merged the "buttons" command into the "presentation" block
+* gui: tweaked corral bar context menu, included section heading for "scenes"
+* prepared v12.3.3 patch
+
+## 12.3.2:
+* **Notable Fixes:**
+    * fixed disabling hat block drop into C-shaped slots
+
+### 2026-10-17
+* new dev version for v12.3.2
+* blocks: reverted enabling to drop hat blocks into rings and C-shaped slots
+* bocks: re-enabled dropping hat blocks into rings
+* prepared v12.3.2 patch
+
+## 12.3.1:
+* **Notable Fixes:**
+    * fixed "include settings" predicate for puzzle templates
+    * fixed refreshing the corral when hidden scenes are un-hidden
+    * fixed removing the scene album from the corral when deleting the second-last scene
+    * fixed a minor XML formatting glitch (with no functional relevance)
+* **Notable Changes:**
+    * added a simple costume-by-name getter to the costume composition library ("Pictures")
+
+### 2026-10-16
+* new dev version for v12.3.1
+* scenes: fixed "include settings" predicate for puzzle templates
+* gui: fixed refreshing the corral when hidden scenes are un-hidden
+* gui: fixed removing the scene album from the corral when deleting the second-last scene
+* store: fixed a minor XML formatting glitch (with no functional relevance)
+* added a simple costume-by-name getter to the costume composition library ("Pictures")
+* prepared v12.3.1 patch
+
+## 12.3.0:
 * **New Features:**
-    * first-class processes - new built in data type
-    * new special "process" input slot type (large gear symbol inside an oval "slot" shape)
+    * added the option to always include a tutorial in a project derived from a template
+    * added ability to hide individual scene(s) in the corral via the corral-bar's context menu, use for pedagogical puzzles (only!)
+    * added "import costume from library" button to the wardrobe
+    * added "import sound from library" button to the jukebox
+    * programmatically compute script pic costumes when placing a ring or a block-expression into the "_ of costume _" reporter's right input slot (and leaving the left slot empty)
+    * new "cst_compose(cst1, cst2, x_offset, y_offset)" extension for composing costumes
+    * new "presentations" library for creating simple slide shows and for authoring translatable tutorial windows
+    * new "lists" library for rotating, stretching, smoothing, compressing and accessing lists
+    * new "Pictures" library, for composing new costumes from existing ones, and for programmatically generating costumes showing blocks and scripts
+    * dynamic contents for variadic C-Slots (When slot signals 'expand' -> report a command block or a stack of commands)
+* **Notable Changes:**
+    * pressing the green flag button first stops all active processes before (re-) starting the green-flagged scripts
+    * allow hat blocks to be dropped into rings
+    * enable costumes and sounds to be exported as data dependencies in libraries, scripts and script pics. Currently limited to direct dependencies, i.e. not inside data structures (lists) for reasons of data bloat
+    * when testing the data type of a deleted sprite report <false> to "is ... a (sprite)"
+    * changed the jukebox's "record new sound" button's symbol from red dot to microphone
+    * new "picture", "shirt" and "microphone" symbols
+    * changed the contrast of the wardrobe's and jukebox's creation buttons
+    * changed "Edge Computer Vision" library name into just "Computer Vision"
+    * cleaned up and rearranged the list of libraries
+* **Notable Fixes:**
+    * fixed centering thumbnails in costume icons (buttons) in the wardrobe and media browser
+    * fixed a type inference glitch in the block editor
+    * fixed a syntax error (missing argument slot) in the Spanish translation of the "switch to scene" command block
+    * fixed color picker for custom categories when zooming the IDE's magnification
+    * fixed the pipette tool in the paint editor when zooming the IDE's magnification
+    * fixed localization issue with translatable single-item options in custom blocks' user defined dropdown menus
+    * fixed an error catching glitch in the speech-recognition extension
+* **Translation Updates:**
+    * Spanish
+    * German
+
+### 2026-10-15
+* extensions: tweaked costume composition extension
+* German translation update (with layout terminology)
+* blocks: allow hat blocks to be dropped into rings
+* threads: enable costumes and sounds to be exported as data dependencies in libraries, scripts and script pics. Currently limited to direct dependencies, i.e. not inside data structures (lists) for reasons of data bloat
+* new "Pictures" library, for composing new costumes from existing ones, and for programmatically generating costumes showing blocks and scripts
+* v12.3.0 rc
+* prepared v12.3.0 minor release
+
+### 2026-10-14
+* objects: fixed centering thumbnails in costume icons (buttons) in the wardrobe and media browser
+* threads: programmatically compute script pic costumes when placing a ring or a block-expression into the "_ of costume _" reporter's right input slot (and leaving the left slot empty)
+* added ability to hide individual scene(s) in the corral via the corral-bar's context menu, use for pedagogical puzzles (only!)
+* extensions: new "cst_compose(cst1, cst2, x_offset, y_offset)" extension for composing costumes
+
+### 2026-10-13
+* German translation update (smooth lists)
+* added new "presentations" library
+* added new "lists" library (new utility functions)
+* changed "Edge Computer Vision" library name into just "Computer Vision"
+* cleaned up and rearranged the list of libraries
+* scenes, guj: fixed a bug when removing a project's template information
+* scenes, gui, store: added the option to always include a tutorial in a project derived from a template (Geez, teachers are ... special)
+
+### 2026-10-12
+* threads: identify a deleted sprite or clone as type "corpse", report <false> on testing as sprite
+* German translation update (typography strings)
+
+### 2026-10-10
+* gui: added "import costume from library" button to the wardrobe
+* gui: adjusted wardrobe indices to the additional "import" button
+* gui: added "import sound from library" button to the jukebox
+* symbols: added new "microphone" symbol
+* gui: changed the jukebox's "record new sound" button's symbol from red dot to microphone
+* objects: pressing the green flag button first stops all active processes before (re-) starting the green-flagged scripts
+* widgets: fixed color picker for custom categories when zooming the IDE's magnification
+* paint: fixed the pipette tool in the paint editor when zooming the IDE's magnification
+* byob: fixed localization issue with translatable single-item options in custom blocks' user defined dropdown menus
+* extensions: fixed an error catching glitch in the speech-recognition extension
+
+### 2026-10-09
+* new dev version
+* blocks: added dynamic contents support for CSlots
+* byob: fixed a type inference glitch in the block editor
+* symbols: added new "picture" symbol
+* symbols: added new "shirt" symbol
+
+## 12.2.3:
+* **Notable Changes:**
+    * unring reporters dropped into ring-slots that are declared to report a block or function (command, reporter, predicate, hat, script)
+    * added "script" return type declaration to "parse code" reporter in the code2blocks library
+    * added ability to hide the stage in the corral via the corral-bar's context menu, use for pedagogical puzzles (only!)
+    * clicking on the pencil icon or project label saves the project if there are unsaved changes (i.e. if the pencil icon is showing)
+* **Notable Fixes:**
+    * mark custom predicate blocks to always report a Boolean data type
+* **Translation Updates:**
+    * German
+
+### 2026-10-06
+* added German translation for the code2blocks library name and description
+* German translation update for some missing strings
+* gui: clicking on the pencil icon or project label saves the project if there are unsaved changes (i.e. if the pencil icon is showing)
+* prepared v12.2.3 patch
+
+### 2026-10-05
+* new dev version
+* blocks, objects: unring reporters dropped into ring-slots that are declared to report a block or function (command, reporter, predicate, hat, script). This also addresses #3575
+* byob: mark custom predicate blocks to always report a Boolean data type
+* code2blocks library: added "script" return type declaration to "parse code" reporter
+* gui, objects, store: added ability to hide the stage in the corral via the corral-bar's context menu, use for pedagogical puzzles (only!)
+
+## 12.2.2:
+* **Notable Changes:**
+    * tables ADT library: added "export" option to tables' context menus
+    * neural networks & plot bars libraries: updated the "plot bars" command - removed input type enforcing
+* **Translation Updates:**
+    * German
+
+### 2026-10-02
+* tables: added "export" option to table's context menus (for table ADTs)
+* neural networks library: updated the "plot bars" command - removed input type enforcing
+* plot bars library: updated the "plot bars" command - removed input type enforcing
+* German translation update, changed translation of dimensions that can also be used for directions ("left", "top")
+* prepared v12.2.2 patch
+
+## 12.2.1:
+* no notables changes
+* no fixes
+* just some extension tweaks for evil educators with no courage or imagination
+
+### 2026-10-01
+* extension tweaks for evil educators with no courage or imagination
+
+## 12.2.0:
+* **New Features:**
+    * ability to hide sprites in the corral via the corral-bar's context menu, use for pedagogical puzzles
+* **Translation Updates:**
+    * German
+
+### 2026-09-22
+* objects, gui, store: added ability to hide sprites in the corral via the corral-bar's context menu, use for pedagogical puzzles
+* incremented dev version to v12.2
+* prepared v12.2 release
+
+### 2026-09-21
+* German translation update
+* new dev version
+
+## 12.1.3:
+* **Notable Fixes:**
+    * fixed a visible stepping glitch when displaying intermediate custom reporter results
+
+### 2026-09-10
+* threads: fixed a visible stepping glitch when displaying intermediate custom reporter results
+* prepared v12.1.3 patch
+
+## 12.1.2:
+* **Notable Fixes:**
+    * fixed dropdown menu of the "overlay" block's y-place slot in the shapes library
+    * cleaned up the costumes folder
+
+### 2026-09-10
+* cleaned up costumes
+* prepared v12.1.2 patch
+
+### 2026-09-09
+* fixed #3572
+* shapes library: added type field to rounded rectangles
+
+## 12.1.1:
+* **New Features:**
+    * added 'scn_label(txt)' extension for programmatically setting the label of a tutorial window"
+    * added "set label to" command to the tutorials library
+
+### 2026-09-07
+* extensions: added 'scn_label(txt)' extension for programmatically setting the label of a tutorial window"
+* added "set label to" command to the tutorials library
+* prepared v12.1.1 patch
+
+## 12.1.0:
+* **New Features:**
+    * first-class processes - new built-in data type
+    * new special "process" input slot type (large gear symbol)
     * new blocks for creating new processes, getting their state, pausing, resuming and stopping them individually and programmatically
-    * new animated and still symbols for interlocking gears - used for process data type
-    * new "Body Language" category in the "Edge AI" library 
+    * new animated and still symbols depicting interlocking gears - used for process data type
+    * new zoom bar at the bottom right of the IDE, new magnifier plus / minus symbols used for zooming the IDE in and out
+    * new "Body Language" category in the "Edge AI" library
+    * new category selection buttons in the costumes browser dialog, thank you, Victoria!
+    * new - as of yet "hidden" behind shift-right-click script pane menu item "clean unhatted", thank you, Peter!
+    * added "round rect", "skew", "paint all" and "fill all" blocks to the "shapes" library
 * **Notable Changes:**
     * hide empty custom categories in puzzles and when selecting the "hide empty categories" setting
     * shadow (don't inherit / delegate) scripts that use block-instance variables for sprite-clones
-    * changed small gear symbol to 6 spikes (from 8)
+    * custom reporters without an explicit return data type declaration automatically infer one from their definition script when they are edited
+    * ADT slots can be made localizable by using the dollar-underscore prefix
+    * dynamic dropdown menu items can be localized by using the dollar-underscore prefix
+    * ADTs (custom types) are rendered as "box" symbols in variable-, list- and table watchers where they cannot render their own morph methods for lack of a full process
+    * reduced the number of blocks in the shapes library and changed the UI of the composition blocks
+    * updated the shapes library with translatable "shape" ADT input slots
+    * updated the neural networks library with translatable "neural network" ADT input slots
+    * changed the small gear symbol to 6 spikes (from 8)
     * MQTT extension update, thanks, Simon and Xavier!
+    * rearranged and moved the shapes library into the first group
+    * added support for localizable dynamic variadic input slot contents (when slot signals 'expand')
+    * added dynamic slot contents support to color and Boolean type slots
+    * added special "basic" input types (23 for "any", 24 for "numeric", 25 for "text") immune to readonly and dropdown menus for use inside variadic input groups
 * **Notable Fixes:**
     * disable empty category buttons when switching back from "hide empty categories" setting
     * fixed display of continuations capturing variadic inputs
+    * fixed zebra coloring for chameleon-colored variadic input slots
+* **Documentation Updates:**
+    * updated API.md with new "noStorageItems" configuration key
+    * updated CONTRIBUTING.md with instruction to issue PRs against the dev branch, thanks, Peter!
 * **Translation Updates:**
     * German
     * Chinese
 
+### 2026-09-02
+* prepared v12.1 release
+
+### 2026-08-31
+* German translation update (restored some hover help strings)
+* v12.1.0-rc16
+
+### 2026-08-27
+* objects: removed "number" type declaration for "... at ..." sensing reporter
+* v12.1.0-rc15
+
+### 2026-08-26
+* shapes: fixed broken measure blocks (move / center / place pinhole)
+* v12.1.0-rc14
+
+### 2026-08-25
+* gui: tweaked zoom bar buttons
+* v12.1.0-rc13
+* shapes library: changed German translation for rhombus (Raute)
+* updated shapes library: changed defaults from 'pinhole' to 'center', combined "paint" and "fill" transformations
+* shapes: reverteed 'center' to 'pinhole', added "fill" variant with optional color
+
+### 2026-08-24
+* gui: fixed a typo in hover-help for puzzles
+* fixed / updated German translations for the costume and vector editors
+* fixed / updated German translations for the project and context menus
+* more German translation fixes
+* symbols: added new "magnifierPlus/Minus" symbols
+* gui: new zoom bar
+* v12.1.0-rc12
+* gui: make zoom bar float in front of dialog boxes
+
+### 2026-08-23
+* threads, blocks: added special "basic$" input type immune to readonly and dropdown menus for use inside variadic input groups
+* v12.1.0-rc11
+
+### 2026-08-22
+* German translation update for "My Shapes" (for snap.schule)
+* shapes: minor speed-up optimizations
+* blocks: fixed a rendering glitch for ADT slots in flat mode
+* v12.1.0-rc10
+
+### 2026-08-21
+* blocks: fixed and tweaked slot label zebra coloring for variadic inputs
+* blocks, threads: added 'process' item to the "this" reporter's dropdown menu
+* German translation upddate for "process" and "processes"
+* simplified shapes library blocks
+* v12.1.0-rc9
+
+### 2026-08-20
+* blocks: added support for localizable dynamic variadic input slot contents (when slot signals 'expand')
+* German translation update for "with x:" string
+* shapes: added new "fill all of" transformation block to the shapes library
+* v12.1.0-rc8
+* blocks: added dynamic slot contents support to color and Boolean type slots
+* shapes: collapsed both "round rect" blocks into a single one
+* threads, blocks: added special "basic" input types immune to readonly and dropdown menus for use inside variadic input groups
+
+### 2026-08-19
+* shapes: added new "paint all" transformation block to the shapes library
+
+### 2026-08-18
+* shapes: added "round rect" blocks to the "shapes" library
+* German translation update for geometrical corner names
+* shapes: added "skew" transformation block
+* v12.1.0-rc7
+
+### 2026-08-17
+* further refined and simplified the shapes library
+* updated neural networks library with translatable "neural network" ADT input slots
+* lists, objects, tables, store: render ADTs as box / cube symbol in situations where they cannot be rendered by their own method, e.g. inside list / table / variable watchers
+* blocks: new - as of yet "hidden" behind shift-right-click script pane menu item "clean unhatted", thank you, Peter!
+* v12.1.0-rc6
+* updated German translation for "Image view"
+
+### 2026-08-16
+* v12.1.0-rc5
+
+### 2026-08-15
+* blocks: made dynamic dropdown menus translatable using the $-underscore prefix
+* blocks: fixed zebra coloring for chameleon-colored variadic input slots
+* reduced the number of blocks shapes library and changed the UI of the composition blocks
+* German translation update for certain geometrical measures
+
+### 2026-08-14
+* blocks: support translating ADT input slots using the $-underscore prefix
+* German translation update for common ADT slots used in standard libraries
+* updated shapes library with translatable "shape" ADT input slots
+* Chinese translation update, thank you, @Ayist14!
+* v12.1.0-rc4
+
+### 2026-08-13
+* byob: automatically infer the return data type for custom reporters that don't yet have one by scanning their definition when editing them
+* v12.1.0-rc3
+* German translation update for library categories
+* libraries: Rearranged "Shapes" into the first group
+
+### 2026-08-12
+* lists: fixed clicking on the down-arrow in a list watcher to pop up the index range menu
+* v12.1.0-rc2
+
+### 2026-08-11
+* tables: fixed context menu for table cells
+* v12.1.0-rc1
+
+### 2026-08-10
+* gui: worked on cosstume category selectors
+* German translation update for costume category names
+* updated API.md with Peter's new "noStorageItems" configuration setting
+* updated dev version
+* objects: changed default / initial video transparency from 50% to solid (0%)
+* objects: reverted video transparency default to 50%
+* Edge-AI library update
+
 ### 2026-08-09
 * pulled some fixes from gigamonkey and others, updated file versions
 * Chinese translation update
+* new category selection buttons in the costumes browser dialog, thank you, Victoria!
+* updated dev version
 
 ### 2026-08-08
 * gui: hide empty custom categories in puzzles and when selecting the "hide empty categories" setting

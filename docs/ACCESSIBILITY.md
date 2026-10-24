@@ -221,3 +221,21 @@ see `tests/README.md` for how to run them. What we can and cannot automate:
   tabs, toolbar, listbox, tree, dialog (modal), menu.
 - Snap!'s own `ScriptFocusMorph` — proof that keyboard block editing works
   in Morphic; we extend rather than replace it.
+
+
+## Execution log extension
+
+The default-loaded execution log is a native DOM `aside` named **Execution
+Log**, alongside the canvas. Its scroll area is a named region, including
+when the log is empty. Each execution is a focusable `article`; script
+thumbnails have accessible names and text, image, and audio outputs use
+native elements. A short `status` announcement reports execution starts,
+completion, and clearing without rereading the entire notebook.
+
+All actions use native buttons with visible keyboard focus. **Restore
+script** inserts a copy into the current scripting area; dragging the
+thumbnail offers the same operation with a chosen position. Settings and
+hiding the notebook restore the canvas space. At narrow viewport widths,
+the notebook occupies the bottom of the window. Presentation mode hides
+it. See [ExecutionLog.md](ExecutionLog.md) for behavior and export formats;
+`tests/specs/80-execution-log.spec.js` exercises this contract.

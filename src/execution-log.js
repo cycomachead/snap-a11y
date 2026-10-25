@@ -42,6 +42,12 @@
           ended (done / stopped / error) and the result, rendered like a
           result bubble would (text, booleans, colors, lists & tables,
           costumes, sounds, rings, sprites, pictures, errors)
+        * command scripts have no result, but they usually change the
+          stage - which is hidden in "blocks only" mode. So each run
+          compares a tiny thumbnail of the stage before and after, and
+          if it differs (sprites moved or drawn, pen trails, speech
+          bubbles, watchers) a picture of the stage after the run becomes
+          part of the entry (exportable as PNG)
         * the script picture can be dragged back into the scripting area
           (a fresh copy, just like dragging a block out of a result bubble),
           or added there via the entry's context menu / Enter key
@@ -80,7 +86,7 @@ Morph, ScrollFrameMorph, StringMorph, TextMorph, PushButtonMorph, SymbolMorph,
 MenuMorph, Color, Point, BlockMorph, ReporterBlockMorph, CommentMorph, List,
 ListWatcherMorph, TableFrameMorph, TableMorph, TableDialogMorph, Costume,
 SVG_Costume, Sound, Context, SpriteMorph, MorphicPreferences, SnapExtensions,
-localize, isNil, isString, isSnapObject, newCanvas, display, navigator,
+localize, isNil, isString, isSnapObject, newCanvas, display, navigator, nop,
 SyntaxElementMorph, StageHandleMorph, detect*/
 
 /*jshint esversion: 11*/
@@ -106,7 +112,14 @@ var ExecutionLog = {
     minWidth: 220,          // the pane's minimum width in pixels
     defaultWidthRatio: 0.36, // the pane's share of the scripting area
     maxResultHeight: 260,   // for lists & tables
-    maxPictureHeight: 220   // for costumes, pictures, rings
+    maxPictureHeight: 220,  // for costumes, pictures, rings
+
+    // stage change detection: when a run changes what the (hidden) stage
+    // shows - sprites moved or drawn, pen trails, speech bubbles,
+    // watchers - a picture of the stage becomes part of the entry
+    detectStageChanges: true,
+    stageSignatureExtent: new Point(64, 48), // thumbnail size compared
+    stagePictureWidth: 320                   // thumbnail size kept
 };
 
 // ExecutionLog helpers ////////////////////////////////////////////////////
@@ -186,6 +199,49 @@ ExecutionLog.framedImageMorph = function (canvas) {
     return frame;
 };
 
+ExecutionLog.stageSignature = function (stage) {
+    // answer the pixels of a tiny thumbnail of the stage (or null), used
+    // to find out whether a run changed what the stage shows
+    var ext = this.stageSignatureExtent,
+        canvas;
+    if (!this.detectStageChanges || !stage) {
+        return null;
+    }
+    try {
+        canvas = stage.thumbnail(ext, null, false);
+        return canvas.getContext('2d').getImageData(
+            0,
+            0,
+            canvas.width,
+            canvas.height
+        ).data;
+    } catch (err) {
+        return null; // e.g. a tainted canvas, treat as "unknown"
+    }
+};
+
+ExecutionLog.signaturesDiffer = function (a, b) {
+    var i;
+    if (!a || !b || a.length !== b.length) {
+        return false; // unknown, assume nothing changed
+    }
+    for (i = 0; i < a.length; i += 1) {
+        if (a[i] !== b[i]) {
+            return true;
+        }
+    }
+    return false;
+};
+
+ExecutionLog.stagePicture = function (stage) {
+    // answer a canvas showing the stage, as wide as stagePictureWidth
+    var ratio = stage.dimensions.y / stage.dimensions.x;
+    return stage.thumbnail(new Point(
+        this.stagePictureWidth,
+        Math.round(this.stagePictureWidth * ratio)
+    ));
+};
+
 ExecutionLog.isTextual = function (value) {
     return isString(value) || typeof value === 'number' ||
         typeof value === 'boolean' || value instanceof Color;
@@ -249,8 +305,12 @@ ExecutionLog.writeClipboardText = async function (text, ide) {
     what it reported. ExecutionLogEntryMorph displays me.
 */
 
-function ExecutionLogEntry(index, topBlock, receiver) {
+function ExecutionLogEntry(index, topBlock, receiver, stage) {
     this.index = index;
+    this.stage = stage || null;
+    this.stageBefore = ExecutionLog.stageSignature(this.stage);
+    this.stageChanged = false;
+    this.stagePicture = null; // a canvas, if the stage changed
     this.script = topBlock.fullCopy(); // a snapshot of the script as run
     this.wasTemplate = topBlock.isTemplate === true; // e.g. a palette block
     this.script.isTemplate = false;
@@ -283,6 +343,30 @@ ExecutionLogEntry.prototype.finish = function (process) {
             this.hasResult = this.result !== undefined;
         }
     }
+    this.checkStageChange();
+};
+
+ExecutionLogEntry.prototype.checkStageChange = function () {
+    // keep a picture of the stage if the run changed what it shows
+    var after;
+    if (!this.stage || !this.stageBefore) {
+        return;
+    }
+    try { // watchers only refresh when stepped, catch up with them first
+        this.stage.watchers().forEach(watcher => watcher.update());
+    } catch (err) {
+        nop();
+    }
+    after = ExecutionLog.stageSignature(this.stage);
+    if (ExecutionLog.signaturesDiffer(this.stageBefore, after)) {
+        this.stageChanged = true;
+        try {
+            this.stagePicture = ExecutionLog.stagePicture(this.stage);
+        } catch (err) {
+            this.stagePicture = null;
+        }
+    }
+    this.stageBefore = null; // no longer needed
 };
 
 ExecutionLogEntry.prototype.fail = function (error) {
@@ -293,6 +377,7 @@ ExecutionLogEntry.prototype.fail = function (error) {
     this.finishedAt = Date.now();
     this.state = 'error';
     this.errorText = localize(error.name) + '\n' + localize(error.message);
+    this.checkStageChange();
 };
 
 ExecutionLogEntry.prototype.duration = function () {
@@ -354,6 +439,7 @@ ExecutionLogEntry.prototype.resultText = function () {
 ExecutionLogEntry.prototype.accessibleText = function (ide) {
     // what a screen reader should say about me
     var txt = localize('run') + ' ' + this.index,
+        lines,
         res;
     if (this.receiverName) {
         txt += ', ' + this.receiverName;
@@ -361,6 +447,12 @@ ExecutionLogEntry.prototype.accessibleText = function (ide) {
     txt += ': ' + (ide.blockAccessibleLabel instanceof Function ?
         ide.blockAccessibleLabel(this.script)
         : this.script.selector);
+    if (ide.scriptLines instanceof Function) {
+        lines = ide.scriptLines(this.script).length;
+        if (lines > 1) {
+            txt += ', ' + lines + ' ' + localize('blocks');
+        }
+    }
     txt += ', ' + localize(ExecutionLog.stateLabels[this.state]);
     if (this.state === 'error') {
         txt += ': ' + this.errorText.replace(/\n/g, ', ');
@@ -374,6 +466,9 @@ ExecutionLogEntry.prototype.accessibleText = function (ide) {
             }
             txt += ', ' + localize('reports') + ' ' + res;
         }
+    }
+    if (this.stageChanged) {
+        txt += ', ' + localize('the stage changed');
     }
     return txt;
 };
@@ -411,6 +506,7 @@ ExecutionLogEntryMorph.prototype.init = function (entry, log) {
     this.resultMorph = null;
     this.resultValueMorph = null; // the live widget inside, if any
     this.resultHeight = null;
+    this.stageMorph = null; // a picture of the stage, if it changed
 
     ExecutionLogEntryMorph.uber.init.call(this);
     this.isDraggable = false;
@@ -477,6 +573,13 @@ ExecutionLogEntryMorph.prototype.build = function () {
     this.resultMorph = this.createResultMorph(maxWidth);
     if (this.resultMorph) {
         this.add(this.resultMorph);
+    }
+    if (this.stageMorph) {
+        this.stageMorph.destroy();
+    }
+    this.stageMorph = this.createStageMorph(maxWidth);
+    if (this.stageMorph) {
+        this.add(this.stageMorph);
     }
     this.header.text = this.headerText();
     this.header.fixLayout(true); // just me, don't re-layout the cell
@@ -570,6 +673,38 @@ ExecutionLogEntryMorph.prototype.createResultMorph = function (maxWidth) {
         return null;
     }
     morph = this.renderValue(entry.result, maxWidth, fontSize);
+    return morph;
+};
+
+ExecutionLogEntryMorph.prototype.createStageMorph = function (maxWidth) {
+    // a captioned picture of the stage, if the run changed it
+    var entry = this.entry,
+        morph,
+        caption,
+        pic;
+    if (!entry.stageChanged || !entry.stagePicture) {
+        return null;
+    }
+    morph = new Morph();
+    morph.color = new Color(0, 0, 0, 0);
+    caption = new StringMorph(
+        localize('stage') + ':',
+        Math.max(9, SyntaxElementMorph.prototype.fontSize - 1),
+        null,
+        false,
+        true // italic
+    );
+    caption.color = this.textColor();
+    morph.add(caption);
+    pic = ExecutionLog.framedImageMorph(ExecutionLog.fitCanvas(
+        entry.stagePicture,
+        maxWidth - 2,
+        ExecutionLog.maxPictureHeight
+    ));
+    pic.setPosition(caption.bottomLeft().add(new Point(0, 2)));
+    morph.add(pic);
+    morph.bounds.setWidth(Math.max(caption.width(), pic.width()));
+    morph.bounds.setHeight(pic.bottom() - caption.top());
     return morph;
 };
 
@@ -720,7 +855,11 @@ ExecutionLogEntryMorph.prototype.fixLayout = function () {
         this.resultMorph.setPosition(new Point(x, y));
         y += this.resultMorph.height() + pad;
     }
-    this.bounds.setHeight(y - this.top());
+    if (this.stageMorph) {
+        this.stageMorph.setPosition(new Point(x, y));
+        y += this.stageMorph.height() + pad;
+    }
+    this.bounds.setHeight(Math.ceil(y - this.top()));
     this.accent.setPosition(this.position());
     this.accent.setExtent(new Point(this.accentWidth, this.height()));
     this.changed();
@@ -820,6 +959,16 @@ ExecutionLogEntryMorph.prototype.userMenu = function () {
                 () => new TableDialogMorph(value).popUp(world)
             );
         }
+    }
+    if (entry.stageChanged && entry.stagePicture) {
+        menu.addItem(
+            'export stage picture...',
+            () => ide.saveCanvasAs(
+                entry.stagePicture,
+                ide.executionLogFileName(entry) + ' ' + localize('stage')
+            ),
+            'save the picture of the stage\nafter this run as a PNG file'
+        );
     }
     menu.addLine();
     menu.addItem(
@@ -1299,7 +1448,8 @@ IDE_Morph.prototype.logExecution = function (process, topBlock, receiver) {
         entry = new ExecutionLogEntry(
             this._executionLogNextIndex,
             topBlock,
-            receiver
+            receiver,
+            this.stage
         );
     } catch (err) {
         return null; // never break running a script over logging it
@@ -1451,6 +1601,10 @@ IDE_Morph.prototype.executionLogScriptsXML = function (withResults) {
             txt = entry.resultText();
             if (isNil(txt) && entry.hasResult) {
                 txt = localize('(result cannot be shown as text)');
+            }
+            if (entry.stageChanged) {
+                txt = (isNil(txt) ? '' : txt + '\n') +
+                    localize('(the stage changed)');
             }
             if (!isNil(txt)) {
                 if (txt.length > ExecutionLog.maxTextLength) {

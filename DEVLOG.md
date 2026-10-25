@@ -14,6 +14,10 @@
   and what it reported, rendered the way a result bubble would (text,
   booleans, colors, lists & tables, costumes, sounds, rings, sprites,
   pictures, errors)
+* command scripts have no result, so each run compares a tiny thumbnail
+  of the (hidden) stage before and after; if it differs (sprites moved or
+  drawn, pen trails, speech bubbles, watchers) a picture of the stage
+  after the run becomes part of the entry, exportable as a PNG
 * "Execution Log" is a project setting right below "Blocks only" in the
   project settings menu and is saved with the project (scene attribute
   executionlog="true"); turning it on also turns "Blocks only" on because

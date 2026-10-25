@@ -116,6 +116,26 @@ test.describe('execution log', () => {
         await expect(groups.nth(3)).toHaveAttribute('aria-label', /run 4/);
     });
 
+    test('a command script that changes the stage gets a picture of the stage', async ({ page }) => {
+        await snapEval(page, ide => ide.toggleExecutionLog(true));
+        await runBlock(page, 'reportVariadicSum', [[1, 2]]); // no side effects
+        await settle(page);
+        await runBlock(page, 'forward', [50]); // moves the sprite
+        await settle(page);
+        const log = await snapEval(page, ide => ide.executionLogEntries().map(e => ({
+            changed: e.stageChanged,
+            picture: !!(e.stagePicture && e.stagePicture.width),
+            cell: !!e.morph.stageMorph,
+            label: e.morph.ariaLabel()
+        })));
+        expect(log[0].changed).toBe(false);
+        expect(log[0].cell).toBe(false);
+        expect(log[1].changed).toBe(true);
+        expect(log[1].picture).toBe(true);
+        expect(log[1].cell).toBe(true);
+        expect(log[1].label).toContain('the stage changed');
+    });
+
     test('scripts can be brought back into the scripting area by keyboard and by dragging', async ({ page }) => {
         await snapEval(page, ide => ide.toggleExecutionLog(true));
         await runBlock(page, 'reportVariadicSum', [[1, 2]]);
@@ -163,7 +183,8 @@ test.describe('execution log', () => {
         });
         expect(result.xmlStart).toBe('<scriptsonly');
         expect(result.scripts).toBe(2);
-        expect(result.comments).toBe(1); // only the reporter has a result
+        // the reporter's result and the say block's stage change
+        expect(result.comments).toBe(2);
         expect(result.imported).toBe(2);
     });
 

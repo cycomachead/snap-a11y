@@ -52,6 +52,7 @@ npm run report                    # open the HTML report
 | `specs/50-keyboard.spec.js` | mixed | baseline: today's keyboard script editing; spec: full-IDE keyboard |
 | `specs/60-aria-snapshot.spec.js` | mixed | baseline: AX tree is ~empty today; spec: target tree shape |
 | `specs/70-axe.spec.js` | passing | WCAG scan with an explicit known-failures allowlist |
+| `specs/80-execution-log.spec.js` | passing | the Execution Log pane (`src/execution-log.js`): setting, logging, landmark + entries, keyboard/drag re-use, export, persistence |
 
 **Executable specification pattern:** tests tagged `@spec` assert the
 contract in `docs/ACCESSIBILITY.md` §2.1 but are marked `test.fixme()`, so

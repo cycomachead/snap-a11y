@@ -2,6 +2,58 @@
 
 ## in development:
 
+### 2026-10-26 — sync with main (accessible dialogs)
+* merged main (PR #5: accessible DialogBoxMorph / ListMorph /
+  InputFieldMorph, Open / Save Project and Libraries dialogs, focus rings
+  kept off scrollbars) into the Execution Log branch; conflicts were
+  limited to the DEVLOG, the snap.html cache-busters, the module date
+  markers in gui.js / widgets.js and the sw.js cache version (now
+  12.3.6-a11y.2)
+
+### 2026-10-24 — sync with upstream & Execution Log extension
+* merged jmoenig/Snap master (v12.3.6, 226 commits) into the a11y fork;
+  conflicts were limited to the snap.html script cache-busters and the
+  sw.js cache version
+* new src/execution-log.js, an extension that is loaded by default from
+  snap.html: a notebook-style "Execution Log" pane for the "Blocks only"
+  (functions-first) mode that records - top to bottom, oldest to newest -
+  every script the user runs (clicked or activated via the keyboard)
+  together with who ran it, when, how it ended (done / stopped / error)
+  and what it reported, rendered the way a result bubble would (text,
+  booleans, colors, lists & tables, costumes, sounds, rings, sprites,
+  pictures, errors)
+* command scripts have no result, so each run compares a tiny thumbnail
+  of the (hidden) stage before and after; if it differs (sprites moved or
+  drawn, pen trails, speech bubbles, watchers) a picture of the stage
+  after the run becomes part of the entry, exportable as a PNG
+* "Execution Log" is a project setting right below "Blocks only" in the
+  project settings menu and is saved with the project (scene attribute
+  executionlog="true"); turning it on also turns "Blocks only" on because
+  the pane takes the place of the stage & sprite panes, turning "Blocks
+  only" off hides the log. The pane has a resize handle like the stage.
+  ExecutionLog.enabledByDefault (false) decides whether new projects
+  start with both switched on
+* each entry's script picture can be dragged back into the scripting
+  area (a fresh copy, like dragging a block out of a result bubble) or
+  added there via the entry's context menu / Enter key; results can be
+  exported (text, CSV / JSON, PNG, SVG, WAV, XML), copied, or opened in a
+  table dialog; the whole log exports as a <scriptsonly> XML file that
+  Snap! imports again, optionally with each result attached as a comment
+* accessibility: the pane is an "Execution Log" landmark, each entry a
+  Tab stop (role group) whose label reads the script, its state and its
+  result; Enter / Space adds the script to the scripting area and
+  announces it
+* extension primitives for scripts: log_clear(), log_count(),
+  log_result(n), log_script(n) (the script as a ring)
+* everything is additive: the extension wraps IDE_Morph (buildPanes,
+  fixLayout, hideSpritePanes, openProject, refreshIDE, newProject,
+  projectSettingsMenu, accessibleRegions), ThreadManager (startProcess,
+  removeTerminatedProcesses, toggleProcess, stopProcess, stopAll),
+  Process.throwError, SnapSerializer.loadScene and Scene.toXML
+* tests: new tests/specs/80-execution-log.spec.js
+* added src/execution-log.js to snap.html (after api.js) and to the sw.js
+  precache list; bumped the PWA cache version to 12.3.6-a11y
+
 ### 2026-08-15 — accessible dialogs: Open / Save Project, Libraries
 * DialogBoxMorph is now an ARIA dialog (role=dialog, aria-modal, named by
   its title, static body text as its description) that traps focus: while

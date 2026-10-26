@@ -112,7 +112,8 @@ first, then in tests, then in implementation.
 | Stage | `[role="region"][aria-label="Stage"]` |
 | Editor view tabs | `[role="tablist"][aria-label="Editor views"]` with tabs Scripts / Costumes / Sounds |
 | Sprite corral | `[role="tablist"][aria-label="Sprites"]`, one `[role="tab"]` per sprite plus the stage |
-| Dialogs | `[role="dialog"][aria-modal="true"]` labeled by the dialog title; real DOM focus trap; focus restored on close |
+| Dialogs | `[role="dialog"][aria-modal="true"]` labeled by the dialog title (static body text as its accessible description); real DOM focus trap (Tab / Shift+Tab cycle the dialog's own stops, wrapping); Escape cancels; focus restored to the opener on close. Inside: buttons are named `button`s (source / mode toggles carry `aria-pressed`), toggles are `checkbox` / `radio`, input fields are `textbox`es (editing starts on keyboard focus; the hidden textarea takes the field's name while editing), notes are multi-line `textbox`es (`aria-readonly` when not editable). Open / Save Project: `textbox` "Project name" / "Search projects", `listbox` "Projects", `textbox` "Project notes", source buttons Cloud / Examples / Computer. Import library: `textbox` "Search libraries", `listbox` "Libraries", `textbox` "Library description" |
+| Lists in dialogs (`ListMorph`) | `[role="listbox"]` (one Tab stop) with `[role="option"]` children (`aria-selected`), the current one in `aria-activedescendant`; Up / Down / Home / End move the selection (selecting exactly like a click), Enter is the list's double-click action (the dialog's default button) |
 | Menus (incl. context menus) | `[role="menu"]` with `[role="menuitem"]` children, named |
 
 **Speakable block labels**: derived from the block spec with input values

@@ -26,6 +26,8 @@ npm test                          # starts a local server automatically
 
 The config serves the repository root with `python3 -m http.server` and
 blocks Snap!'s service worker so the working tree is always what's tested.
+`loadSnap` also dismisses the "CAUTION! Development Version" dialog that
+dev builds open at startup (pass `{ keepNag: true }` to keep it).
 
 Useful variants:
 
@@ -45,7 +47,8 @@ npm run report                    # open the HTML report
 | `specs/10-document.spec.js` | passing | host-page semantics (lang, title, named keyboard textarea) |
 | `specs/20-landmarks.spec.js` | `fixme` | Phase 1 spec: overlay root, landmarks, live regions |
 | `specs/30-labels.spec.js` | `fixme` | Phases 1/3 spec: accessible names, speakable block labels |
-| `specs/40-focus.spec.js` | mixed | baseline focus reality + Phase 2 spec: focus sync, dialogs |
+| `specs/40-focus.spec.js` | mixed | baseline focus reality + Phase 2 spec: focus sync, dialogs (focus in / trap / Escape restores) |
+| `specs/45-dialogs.spec.js` | passing | dialog keyboard access: Open / Save Project and Import library (search field, listbox arrows, Tab order, Escape, Enter), generic prompt |
 | `specs/50-keyboard.spec.js` | mixed | baseline: today's keyboard script editing; spec: full-IDE keyboard |
 | `specs/60-aria-snapshot.spec.js` | mixed | baseline: AX tree is ~empty today; spec: target tree shape |
 | `specs/70-axe.spec.js` | passing | WCAG scan with an explicit known-failures allowlist |

@@ -316,9 +316,10 @@ Claude Code session transcripts, and re-verified programmatically in Chrome on t
   Review the **APG guidance on keyboard drag-and-drop** patterns before designing this.
 
 ### Medium term
-- **Dialog boxes** (`DialogBoxMorph` and heirs) must work with the screen reader — most
-  importantly: tabbing through the inputs, reading the title, `role=dialog`, focus trap +
-  focus return on close.
+- ✅ **Dialog boxes** (2026-08-15) — `DialogBoxMorph` is a `role=dialog` with focus trap +
+  focus return, Tab through inputs / lists / buttons, Escape cancels; `ListMorph` is a
+  listbox with arrow navigation; Open / Save Project and Import library are wired up (see
+  DEVLOG.md). Still to do: the block editor's scripting area, dialog resize handles.
 - **Sprite control bar** (the tab/toolbar row above the scripting area) still needs tagging.
 - **Global tab order** (target): Toolbar → Category selector → Palette → Sprite control bar →
   Scripting area → Corral controls → Corral → left (palette) resize handle → right (stage)

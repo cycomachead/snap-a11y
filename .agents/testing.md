@@ -43,6 +43,17 @@ handler") — when they break, update them and activate the matching specs.
 - **Readiness**: don't rely on `load` events — wait for
   `world.children[0].palette.contents.children.length > 0` (helper
   `loadSnap`), or `getProjectName()` when opening a fixture.
+- **The dev-version nag dialog**: dev builds open a "CAUTION! Development
+  Version" `DialogBoxMorph` at startup. Since dialogs are real ARIA dialogs
+  it takes DOM focus, and `getByRole('dialog')` would match it too —
+  `loadSnap` destroys it (`{ keepNag: true }` keeps it).
+- **Clicking parallel elements**: they are `pointer-events: none`, so
+  `locator.click()` fails its actionability check. Activate like assistive
+  tech does — `locator.dispatchEvent('click')` — or drive the keyboard.
+- **Dialogs**: helpers `openExamplesDialog` / `openLibrariesDialog` open
+  the Open Project (examples source) / Import library dialogs populated,
+  acting as a keyboard user (`world.lastInputWasKeyboard = true`, so a
+  focused input field starts editing).
 
 ## Fixtures (`tests/fixtures/`)
 

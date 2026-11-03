@@ -36,6 +36,12 @@ The Snap! API can be used to embed or customize Snap! to be used in unique envir
 
 This describes how you can distribute Snap! to work offline.
 
+### [ACCESSIBILITY.md](./ACCESSIBILITY.md) and [A11Y-API-PROPOSAL.md](./A11Y-API-PROPOSAL.md)
+
+The screen-reader / keyboard accessibility roadmap for this fork, and the
+proposal for the hooks Snap! and Morphic should expose so that work can be
+an extension rather than a set of source patches.
+
 ---
 
 ### [Migrating.md](./Migrating.md)

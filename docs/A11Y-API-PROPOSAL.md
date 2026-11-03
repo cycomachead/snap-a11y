@@ -1,6 +1,7 @@
 # What Snap! and Morphic should change to make accessibility work an API, not a patch
 
-*Written October 2026 against this fork (upstream baseline 12.1.0-dev-260808).
+*Written October 2026 against this fork; updated November 2026 after syncing
+with main (upstream baseline v12.3.6, accessible dialogs, Execution Log).
 Line numbers refer to this fork's tree and will drift.*
 
 This document answers one question: **what in Snap! itself or in Morphic
@@ -40,7 +41,8 @@ rather than plug *onto* it. Each of these is a missing seam.
 | 12 | Wrap `ScriptFocusMorph.fixLayout` and dedupe against repaints to detect "focus moved" | `src/gui.js` | Keyboard script editing has no "moved to element X" or "exited" event; `fixLayout` is layout, not semantics. |
 | 13 | Wrap `SyntaxElementMorph.showBubble`, and edit `SpriteMorph.searchBlocks` inline | `src/gui.js`, `src/objects.js` | No IDE-level notification channel for user-facing events (result shown, error, search results, project loaded, sprite selected, block snapped). The fork invented `world.announce()` and then had to find every emitter by hand. |
 | 14 | Read `scripts.lastDroppedBlock` / `lastDropTarget` after the fact | planned | `HandMorph.grab/drop` and `CommandBlockMorph.snap` have a rich *mouse* protocol (`prepareToBeGrabbed`, `reactToGrabOf`, `justDropped`, `reactToDropOf`, `closestAttachTarget`) but no programmatic "pick up this block, move it, drop it here" entry point for a keyboard user, and no post-snap notification. |
-| 15 | Nothing yet for dialogs | `DialogBoxMorph` | `popUp` sets `keyboardFocus`, `processKeyDown` handles only Enter/Esc, Tab cycling happens implicitly via `edit()`. No modal concept, no focusable-children list, no title accessor usable as an accessible name. |
+| 15 | Make dialogs accessible by adding `isAccessible`, `ariaRole`, `a11yTrapsFocus`, `ariaLabel`, `a11yTabStops`, `a11yEscape`, `a11yActivate`, `tagAccessibleContents` directly to `DialogBoxMorph` and calling the tagger from `popUp` | `src/widgets.js` (merged from main, Aug 2026) | Upstream `popUp` sets `keyboardFocus`, `processKeyDown` handles only Enter/Esc, Tab cycling happens implicitly via `edit()`. There is no modal concept, no focusable-children list, and the title is only a child `TextMorph`, so the dialog has to be taught all of it in a Snap!-specific way. `a11yTabStops` is exactly the generic `focusableElements()` upstream should own. |
+| 15b | The Execution Log extension (`src/execution-log.js`) wraps eight `IDE_Morph` methods (`buildPanes`, `fixLayout`, `hideSpritePanes`, `openProject`, `refreshIDE`, `newProject`, `projectSettingsMenu`, `accessibleRegions`) plus `ThreadManager` and `Process.throwError` to add one pane | `src/execution-log.js` | A second, unrelated extension needing the same pane-lifecycle, layout, project-opened, and run-started/stopped notifications proposed in Tier 2 is the clearest evidence that these are general extension seams, not a11y specials. |
 | 16 | Load `accessibility.js` right after `morphic.js` | `snap.html` | Because it loads **before** `widgets.js`, `blocks.js`, `gui.js`, it can only extend Morphic classes. Everything about buttons, blocks, or the IDE had to go into `gui.js` (the file that loads last). The `modules` registry records versions but has no init-after-load hook. |
 | 17 | Use `localize()` on strings such as "argument", "empty", "script N" that have no dictionary entries | `src/gui.js` | Works (passthrough) but there is no namespace for interface-description strings, so translators never see them. |
 | 18 | Re-add the focus ring to the world on every update to keep it on top | `WorldMorph.updateFocusRing` | Morphic has no overlay layer; only `HandMorph` is guaranteed to paint above children. |
@@ -213,7 +215,10 @@ Snap!-specific additions:
 - **Dialogs.** `DialogBoxMorph.prototype.focusableElements()` (the inputs
   and buttons in Tab order; the dialog already knows them because `edit()`
   iterates children) and `title` as a real accessor. Then a generic focus
-  trap can be written once.
+  trap can be written once. This fork's `DialogBoxMorph.a11yTabStops()` and
+  `tagAccessibleContents()` (`src/widgets.js`, merged from main) are a
+  working draft of exactly that; upstream would take the traversal and the
+  title accessor, and the module would keep the ARIA.
 
 - **Localization namespace.** A `SnapTranslator.dict.*.a11y` sub-dictionary
   (or a documented prefix) for interface-description strings, so "argument",
@@ -292,7 +297,10 @@ but each has a natural home:
 5. **Dialog focus trap.** With `focusableElements()` (Tier 1) and
    `dialogOpened/Closed` (Tier 2), `DialogBoxMorph.processKeyDown` can own Tab
    cycling explicitly instead of via `edit()`, and the module can trap and
-   restore native focus.
+   restore native focus. The fork already does this (`a11yTrapsFocus`,
+   `a11yEscape`, focus return on close, `tests/specs/45-dialogs.spec.js`);
+   the remaining work is moving the traversal into the widget and the trap
+   into the module.
 
 6. **A "quiet editing" switch.** `StageMorph.fireKeyEvent` runs "when key
    pressed" hats on every keystroke that reaches the stage. A

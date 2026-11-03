@@ -9,8 +9,13 @@
  * Load snap.html and wait until the IDE is fully constructed:
  * the world exists, the IDE morph is installed, and the palette has
  * been populated for the current sprite.
+ *
+ * Development builds of Snap! greet the user with a "CAUTION! Development
+ * Version" nag dialog; it is dismissed by default (it's an accessible
+ * dialog like any other and would otherwise hold the initial focus). Pass
+ * { keepNag: true } to leave it open.
  */
-async function loadSnap(page) {
+async function loadSnap(page, options = {}) {
     await page.goto('/snap.html');
     // note: the IDE is not necessarily world.children[0] - the accessibility
     // layer adds its focus-ring morph to the world before the IDE opens
@@ -22,7 +27,66 @@ async function loadSnap(page) {
             ide.palette &&
             ide.palette.contents.children.length > 0;
     }, null, { timeout: 30000 });
+    if (!options.keepNag) {
+        await dismissNagDialogs(page);
+    }
     return page;
+}
+
+/**
+ * Close any "nag" dialogs (e.g. the development-version warning) that
+ * Snap! opens on its own at startup.
+ */
+async function dismissNagDialogs(page) {
+    await page.evaluate(() => {
+        world.children
+            .filter(m => m instanceof DialogBoxMorph && m.nag)
+            .forEach(dialog => dialog.destroy());
+    });
+}
+
+/**
+ * Open the "Open Project" browser on the bundled example projects, and
+ * wait until its list is populated. Answers nothing; query the dialog
+ * via getByRole('dialog', { name: 'Open Project' }).
+ *
+ * Both dialog openers act as a keyboard user would have arrived there
+ * (world.lastInputWasKeyboard), so focus-visible behavior - the focus ring,
+ * a focused input field starting to edit - is what the tests exercise.
+ */
+async function openExamplesDialog(page) {
+    await page.evaluate(() => {
+        const ide = world.children.find(m => m instanceof IDE_Morph);
+        world.lastInputWasKeyboard = true;
+        ide.openProjectsBrowser();
+        world.children
+            .find(m => m instanceof ProjectDialogMorph)
+            .setSource('examples');
+    });
+    await page.waitForFunction(() => {
+        const dlg = world.children.find(m => m instanceof ProjectDialogMorph);
+        return dlg && dlg.listField && dlg.listField.elements.length > 1;
+    });
+}
+
+/**
+ * Open the "Import library" dialog and wait until its list is populated.
+ */
+async function openLibrariesDialog(page) {
+    await page.evaluate(() => {
+        const ide = world.children.find(m => m instanceof IDE_Morph);
+        world.lastInputWasKeyboard = true;
+        ide.getURL(
+            ide.resourceURL('libraries', 'LIBRARIES.json'),
+            txt => new LibraryImportDialogMorph(
+                ide, ide.parseResourceFile(txt)).popUp()
+        );
+    });
+    await page.waitForFunction(() => {
+        const dlg = world.children.find(
+            m => m instanceof LibraryImportDialogMorph);
+        return dlg && dlg.listField && dlg.listField.elements.length > 1;
+    });
 }
 
 /**
@@ -86,6 +150,9 @@ async function focusMorphicKeyboard(page) {
 
 module.exports = {
     loadSnap,
+    dismissNagDialogs,
+    openExamplesDialog,
+    openLibrariesDialog,
     snapEval,
     getAXTree,
     getExposedAXNodes,

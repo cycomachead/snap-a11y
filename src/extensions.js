@@ -32,11 +32,11 @@ IDE_Morph, CamSnapshotDialogMorph, SoundRecorderDialogMorph, isSnapObject, nop,
 Color, Process, contains, localize, SnapTranslator, isString, detect, Point,
 SVG_Costume, newCanvas, WatcherMorph, BlockMorph, HatBlockMorph, invoke, isNil,
 BigUint64Array, DeviceOrientationEvent, DialogBoxMorph, Animation, TableMorph,
-TableFrameMorph, console, Morph, MenuMorph*/
+TableFrameMorph, console, Morph, MenuMorph, Rectangle*/
 
 /*jshint esversion: 11, bitwise: false*/
 
-modules.extensions = '2026-August-03';
+modules.extensions = '2026-October-15';
 
 // Global stuff
 
@@ -965,7 +965,7 @@ SnapExtensions.primitives.set(
             acc.voice.onspeechstart = () => acc.start = true;
             done = () => acc.text = '';
             acc.voice.onnomatch = done;
-            acc.voice.orreror = done;
+            acc.voice.onerror = done;
             acc.voice.start();
         } else if (acc.text !== null) {
             return acc.text;
@@ -1463,6 +1463,53 @@ SnapExtensions.primitives.set(
     }
 );
 
+SnapExtensions.primitives.set(
+    'cst_compose(cst1, cst2, x_offset, y_offset)',
+    function (cst1, cst2, x_off, y_off, proc) {
+        var img1, img2,
+            w1, w2,
+            h1, h2,
+            r1, r2,
+            ext,
+            x1, x2,
+            y1, y2,
+            pic,
+            ctx;
+
+        proc.assertType(cst1, 'costume');
+        proc.assertType(cst2, 'costume');
+
+        img1 = cst1.rasterized().contents;
+        w1 = img1.width;
+        h1 = img1.height;
+
+        img2 = cst2.rasterized().contents;
+        w2 = img2.width;
+        h2 = img2.height;
+
+        r1 = new Rectangle(0, 0, w1, h1);
+        r2 = new Rectangle(0, 0, w2, h2).translateBy(
+            new Point(+x_off, +y_off)
+        );
+        ext = r1.merge(r2).extent();
+
+        x1 = Math.abs(Math.min(0, x_off));
+        y1 = Math.abs(Math.min(0, y_off));
+
+        x2 = Math.max(0, x_off);
+        y2 = Math.max(0, y_off);
+
+        // create the target's canvas
+        pic = newCanvas(ext);
+        ctx = pic.getContext('2d');
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(img1, x1, y1);
+        ctx.drawImage(img2, x2, y2);
+
+        return new Costume(pic, 'costume');
+    }
+);
+
 // Sounds (snd_):
 
 SnapExtensions.primitives.set(
@@ -1802,6 +1849,72 @@ SnapExtensions.primitives.set(
     }
 );
 
+SnapExtensions.primitives.set(
+    'ide_stepping([on?])',
+    function (bool) {
+        var stage = this.parentThatIsA(StageMorph),
+            ide = stage.parentThatIsA(IDE_Morph);
+        if (bool === '') {return Process.prototype.enableSingleStepping; }
+        Process.prototype.enableSingleStepping = !!bool;
+        ide.controlBar.steppingButton.refresh();
+        ide.controlBar.refreshSlider();
+        if (!Process.prototype.enableSingleStepping) {
+            stage.threads.processes.forEach(proc => {
+                if (!proc.isPaused) {
+                    proc.unflash();
+                }
+            });
+        }
+    }
+);
+
+SnapExtensions.primitives.set(
+    'ide_flash([secs])',
+    function (flashTime) {
+        var ide = this.parentThatIsA(IDE_Morph);
+        if (flashTime === '') {return Process.prototype.flashTime; }
+        Process.prototype.flashTime = Math.min(
+            Math.max(flashTime, 0), 0.6
+        );
+        ide.controlBar.refreshSlider();
+    }
+);
+
+SnapExtensions.primitives.set(
+    'ide_livecode([on?])',
+    function (bool) {
+        if (bool === '') {return Process.prototype.enableLiveCoding; }
+        Process.prototype.enableLiveCoding = !!bool;
+    }
+);
+
+SnapExtensions.primitives.set(
+    'ide_palette_buttons([on?])',
+    function (bool) {
+        var ide = this.parentThatIsA(IDE_Morph);
+        if (bool === '') {return ide.scene.showPaletteButtons; }
+        ide.scene.showPaletteButtons = !!bool;
+        ide.flushBlocksCache();
+        ide.refreshPalette();
+    }
+);
+
+SnapExtensions.primitives.set(
+    'ide_start_button([on?])',
+    function (bool) {
+        var ide = this.parentThatIsA(IDE_Morph);
+        if (bool === '') {return ide.controlBar.startButton.isVisible(); }
+        if (!ide.isAppMode) {
+            if (bool) {
+                ide.controlBar.startButton.show();
+            } else {
+                ide.controlBar.startButton.hide();
+            }
+        }
+    }
+);
+
+
 // Tutorials & Cloned Scenes (scn_)
 
 SnapExtensions.primitives.set(
@@ -1944,6 +2057,20 @@ SnapExtensions.primitives.set(
             return;
         }
         return new List([rect.left(), rect.top(), rect.right(), rect.bottom()]);
+    }
+);
+
+SnapExtensions.primitives.set(
+    'scn_label(txt)',
+    function (txt, proc) {
+        var stage = this.parentThatIsA(StageMorph),
+            dlg;
+
+        if (!stage.tutorialMode) {return ''; }
+        dlg = stage.parentThatIsA(DialogBoxMorph);
+        dlg.labelString = txt;
+        dlg.createLabel();
+        dlg.fixLayout();
     }
 );
 

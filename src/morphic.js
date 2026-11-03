@@ -1376,7 +1376,7 @@
 
 /*jshint esversion: 11, bitwise: false*/
 
-var morphicVersion = '2026-August-13';
+var morphicVersion = '2026-August-15';
 var modules = {}; // keep track of additional loaded modules
 var useBlurredShadows = true;
 var ZOOM = 1;
@@ -3809,16 +3809,26 @@ Morph.prototype.fullDrawOn = function (aContext, aRect) {
 Morph.prototype.hide = function () {
     this.isVisible = false;
     this.changed();
+    // accessibility: hide my parallel DOM subtree from AT along with me
+    if (this.a11ySyncVisibility) {
+        this.a11ySyncVisibility();
+    }
 };
 
 Morph.prototype.show = function () {
     this.isVisible = true;
     this.changed();
+    if (this.a11ySyncVisibility) {
+        this.a11ySyncVisibility();
+    }
 };
 
 Morph.prototype.toggleVisibility = function () {
     this.isVisible = !this.isVisible;
     this.changed();
+    if (this.a11ySyncVisibility) {
+        this.a11ySyncVisibility();
+    }
 };
 
 // Morph full image:
@@ -11100,6 +11110,10 @@ ListMorph.prototype.select = function (item, trigger) {
     if (this.action) {
         this.action.call(null, item);
     }
+    // accessibility: announce the new selection via aria-activedescendant
+    if (this.updateActiveDescendant) {
+        this.updateActiveDescendant();
+    }
 };
 
 ListMorph.prototype.setExtent = function (aPoint) {
@@ -13029,6 +13043,11 @@ WorldMorph.prototype.edit = function (aStringOrTextMorph) {
         this.cursor.destroy();
     }
 
+    // accessibility: name the hidden textarea after the field being edited
+    if (this.a11yPrepareTextEdit) {
+        this.a11yPrepareTextEdit(aStringOrTextMorph);
+    }
+
     // some magic we apparently need for Android
     this.worldCanvas.focus();
     this.keyboardHandler.focus();
@@ -13101,6 +13120,10 @@ WorldMorph.prototype.stopEditing = function () {
     if (this.cursor) {
         this.cursor.target.escalateEvent('reactToEdit', this.cursor.target);
         this.cursor.target.clearSelection();
+        // accessibility: refresh the exposed value of the edited field
+        if (this.a11yTextEditEnded) {
+            this.a11yTextEditEnded(this.cursor.target);
+        }
         this.cursor.destroy();
         this.cursor = null;
     }

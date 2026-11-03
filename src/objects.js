@@ -96,7 +96,7 @@ CustomBlockDefinition, exportEmbroidery, CustomHatBlockMorph, HandMorph*/
 
 /*jshint esversion: 11*/
 
-modules.objects = '2026-August-07';
+modules.objects = '2026-October-21';
 
 var SpriteMorph;
 var StageMorph;
@@ -1563,7 +1563,6 @@ SpriteMorph.prototype.primitiveBlocks = function () {
         },
         reportAspect: {
             type: 'reporter',
-            reports: 'number',
             category: 'sensing',
             spec: '%asp at %loc',
             defaults: [['hue'], ['mouse-pointer']],
@@ -2019,6 +2018,7 @@ SpriteMorph.prototype.primitiveBlocks = function () {
         },
         reportJSFunction: {
             type: 'reporter',
+            reports: 'reporter',
             category: 'operators',
             spec: 'JavaScript function ( %mult%s ) { %code }',
             code: 'js'
@@ -2042,6 +2042,7 @@ SpriteMorph.prototype.primitiveBlocks = function () {
         reportCompiled: { // experimental
             dev: true,
             type: 'reporter',
+            reports: 'reporter',
             category: 'operators',
             spec: 'compile %repRing for %n args',
             defaults: [null, 0]
@@ -3272,6 +3273,7 @@ SpriteMorph.prototype.init = function (globals) {
     this.isTemporary = false; // indicate a temporary Scratch-style clone
     this.isCorpse = false; // indicate whether a sprite/clone has been deleted
     this.cloneOriginName = '';
+    this.isHiddenInCorral = false;
 
     // volume and stereo-pan support
     this.volume = 100;
@@ -5971,7 +5973,7 @@ SpriteMorph.prototype.userMenu = function () {
                 'make permanent and\nshow in the sprite corral'
             );
         }
-    } else {
+    } else if (!this.isHiddenInCorral) {
         menu.addItem("edit", 'edit');
     }
     menu.addLine();
@@ -6186,18 +6188,22 @@ SpriteMorph.prototype.newClone = function (immediately) {
 };
 
 SpriteMorph.prototype.newTurtleSprite = function () {
-    var ide = this.parentThatIsA(IDE_Morph),
+    var stage = this.parentThatIsA(StageMorph),
+        ide,
         sprite;
     if (this.isCorpse) {
         throw new Error('cannot operate on a deleted sprite');
     }
-    if (ide.stage && ide.stage.cloneCount <= 5000) {
-        sprite = new SpriteMorph(ide.globalVariables);
+    if (stage && stage.cloneCount <= 5000) {
+        sprite = new SpriteMorph(this.globalVariables());
         sprite.isTemporary = true;
-        sprite.cloneOriginName = ide.newSpriteName(sprite.name);
+        ide = stage.parentThatIsA(IDE_Morph);
+        if (ide) {
+            sprite.cloneOriginName = ide.newSpriteName(sprite.name);
+        }
         sprite.setCenter(this.center());
-        ide.stage.add(sprite);
-        ide.stage.cloneCount += 1;
+        stage.add(sprite);
+        stage.cloneCount += 1;
         sprite.fixLayout();
         sprite.rerender();
     } else {
@@ -8737,6 +8743,9 @@ SpriteMorph.prototype.allHatBlocksForKey = function (key) {
 };
 
 SpriteMorph.prototype.allHatBlocksForInteraction = function (interaction) {
+    if (interaction === 'init') {
+        return this.allHatBlocksFor('__init__');
+    }
     return this.scripts.children.filter(morph => {
         if (morph.selector) {
             if (morph.selector === 'receiveInteraction') {
@@ -8843,7 +8852,7 @@ SpriteMorph.prototype.receiveUserInteraction = function (
 };
 
 SpriteMorph.prototype.mouseDoubleClick = function () {
-    if (this.isTemporary) {return; }
+    if (this.isTemporary || this.isHiddenInCorral) {return; }
     this.edit();
 };
 
@@ -10684,6 +10693,7 @@ StageMorph.prototype.init = function (globals) {
     this.isFastTracked = false;
     this.enableCustomHatBlocks = true;
     this.cloneCount = 0;
+    this.isHiddenInCorral = false;
 
     this.timerStart = Date.now();
     this.tempo = 60; // bpm
@@ -11604,6 +11614,8 @@ StageMorph.prototype.fireGreenFlagEvent = function () {
         ide = this.parentThatIsA(IDE_Morph);
 
     this.removeAllClones();
+    this.threads.stopAll();
+    this.runInitScripts();
     this.children.concat(this).forEach(morph => {
         if (isSnapObject(morph)) {
             morph.allHatBlocksFor('__shout__go__').forEach(block => {
@@ -11644,6 +11656,18 @@ StageMorph.prototype.runStopScripts = function () {
     this.children.forEach(morph => {
         if (morph instanceof SpriteMorph) {
             morph.receiveUserInteraction('stopped', true, true);
+        }
+    });
+};
+
+StageMorph.prototype.runInitScripts = function () {
+    // Allow each sprite to run one first step before sending the
+    // green flag event.
+    // usage example: reset the sprite to its original state
+    this.receiveUserInteraction('init', true, true);
+    this.children.forEach(morph => {
+        if (morph instanceof SpriteMorph) {
+            morph.receiveUserInteraction('init', true, true);
         }
     });
 };
@@ -12216,7 +12240,9 @@ StageMorph.prototype.userMenu = function () {
         // menu.addItem('help', 'nop');
         return menu;
     }
-    menu.addItem("edit", 'edit');
+    if (!this.isHiddenInCorral) {
+        menu.addItem("edit", 'edit');
+    }
     menu.addItem("show all", 'showAll');
     menu.addItem(
         "pic...",
@@ -14390,8 +14416,8 @@ Costume.prototype.thumb = function (extentPoint) {
                 (extentPoint.x / w),
                 (extentPoint.y / h)
             ),
-            xOffset = (extentPoint.x - (w * scale)) / 2,
-            yOffset = (extentPoint.y - (h * scale)) / 2;
+            xOffset = (extentPoint.x - (w * scale)) / 4,
+            yOffset = (extentPoint.y - (h * scale)) / 4;
 
         ctx.save();
         ctx.scale(scale, scale);
@@ -15559,7 +15585,7 @@ CellMorph.prototype.dataAsMorph = function (data) {
             // attempt to render the '_morph' method for a custom view.
             // since in this situation we don't have a full Snap! process
             // this will fail in most cases (unless there is a JS extension)
-            // as a fallback render the ADT in table form
+            // as a fallback render a box symbol representing the ADT
             try {
                 contents = invoke(
                     data.lookup('_morph'),
@@ -15571,7 +15597,7 @@ CellMorph.prototype.dataAsMorph = function (data) {
                     return this.dataAsMorph(contents);
                 }
             } catch {
-                setupList();
+                contents = new SymbolMorph('cube', 30);
             }
         } else {
             setupList();

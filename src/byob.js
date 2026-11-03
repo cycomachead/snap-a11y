@@ -113,7 +113,7 @@ ADT_SlotMorph*/
 
 // Global stuff ////////////////////////////////////////////////////////
 
-modules.byob = '2026-August-02';
+modules.byob = '2026-October-20';
 
 // Declarations
 
@@ -476,9 +476,6 @@ CustomBlockDefinition.prototype.parseChoices = function (string) {
         } else {
             // support translating custom drop-downs by prefixing items w/ "$_"
             key = pair[0];
-            if (isString(key) && key.length > 2 && key.startsWith('$_')) {
-                key = localize(key.slice(2));
-            }
             val = pair[1];
             if (isString(val) && val.length > 2 && val.startsWith('$_')) {
                 val = [val.slice(2)];
@@ -489,8 +486,16 @@ CustomBlockDefinition.prototype.parseChoices = function (string) {
                         Object.keys(dict).filter(each => each.startsWith('~')
                     ).length + 1);
                 }
-                dict[key] = key;
+                if (isString(key) && key.length > 2 && key.startsWith('$_')) {
+                    key = key.slice(2);
+                    dict[localize(key)] = [key];
+                } else {
+                    dict[key] = key;
+                }
             } else {
+                if (isString(key) && key.length > 2 && key.startsWith('$_')) {
+                    key = localize(key.slice(2));
+                }
                 dict[key] = val;
             }
         }
@@ -2406,7 +2411,7 @@ CustomReporterBlockMorph.prototype.init = function (
         this.isTemplate = true;
     }
     this.category = definition.category;
-    this.reports = definition.reports;
+    this.reports = isPredicate ? 'Boolean' : definition.reports;
     this.storedTranslations = null; // transient - only for "wishes"
     this.variables = new VariableFrame();
     this.initializeVariables(definition.variableNames);
@@ -2425,7 +2430,7 @@ CustomReporterBlockMorph.prototype.reactToTemplateCopy =
 CustomReporterBlockMorph.prototype.refresh = function (aDefinition, offset) {
     var def = aDefinition || this.definition;
     CustomCommandBlockMorph.prototype.refresh.call(this, aDefinition, offset);
-    this.reports = def.reports;
+    this.reports = this.isPredicate ? 'Boolean' : def.reports;
     if (!this.isPrototype) {
         this.isPredicate = (def.type === 'predicate');
     }
@@ -3771,6 +3776,11 @@ BlockEditorMorph.prototype.updateDefinition = function () {
         this.definition.primitive = null;
     }
 
+    // infer the return data type for reporters if none is given
+    if ((this.definition.type === 'reporter') && !this.definition.reports) {
+        this.definition.reports = this.inferredReturnType(this.definition.body);
+    }
+
     // make sure the spec is unique
     spec = this.definition.spec;
     while (this.target.doubleDefinitionsFor(this.definition).length > 0) {
@@ -3817,6 +3827,31 @@ BlockEditorMorph.prototype.context = function (prototypeHat) {
     stackFrame.outerContext = null;
     stackFrame.comment = head?.comment?.text();
     return stackFrame;
+};
+
+BlockEditorMorph.prototype.inferredReturnType = function (context) {
+    var script = context?.expression,
+        reportBlock,
+        reportExpression,
+        reportLiteral;
+    if (script instanceof BlockMorph) {
+        if (script instanceof ReporterBlockMorph) {
+            return script.reports;
+        }
+        reportBlock = script.allBlocks().find(block =>
+            block.selector === 'doReport');
+        if (reportBlock instanceof CommandBlockMorph) {
+            reportExpression = reportBlock.inputs()[0];
+            if (reportExpression instanceof ReporterBlockMorph) {
+                return reportExpression.reports;
+            }
+            reportLiteral = reportExpression.evaluate();
+            if (reportLiteral.length) {
+                return Process.prototype.reportTypeOf(reportLiteral);
+            }
+        }
+    }
+    return null;
 };
 
 BlockEditorMorph.prototype.prototypeSpec = function () {

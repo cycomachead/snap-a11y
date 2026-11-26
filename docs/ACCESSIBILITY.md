@@ -224,3 +224,7 @@ see `tests/README.md` for how to run them. What we can and cannot automate:
   tabs, toolbar, listbox, tree, dialog (modal), menu.
 - Snap!'s own `ScriptFocusMorph` — proof that keyboard block editing works
   in Morphic; we extend rather than replace it.
+- **HTML-in-Canvas** (Chrome 157+) — lets canvas children be laid out,
+  painted into the canvas and stay accessible. It does not replace the
+  parallel DOM; see [HTML-IN-CANVAS.md](HTML-IN-CANVAS.md) for the
+  evaluation and the opt-in prototype.

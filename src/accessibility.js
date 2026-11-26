@@ -912,6 +912,12 @@ WorldMorph.prototype.handleA11yKeydown = function (event) {
         return;
     }
 
+    // a morph whose content is native HTML controls (html-canvas.js) leaves
+    // most keys to the browser: typing, Space, Tab between its own controls
+    if (focused && focused.a11yNativeKey && focused.a11yNativeKey(event)) {
+        return;
+    }
+
     // let a focused composite widget (e.g. combobox) handle its own keys first
     if (focused && focused.a11yHandleKey && focused.a11yHandleKey(event)) {
         event.preventDefault();

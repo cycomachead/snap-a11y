@@ -14,9 +14,15 @@
  * Version" nag dialog; it is dismissed by default (it's an accessible
  * dialog like any other and would otherwise hold the initial focus). Pass
  * { keepNag: true } to leave it open.
+ *
+ * Pass { query: '?html-in-canvas' } to add a query string to the URL, or
+ * set the SNAP_QUERY environment variable to run a whole suite that way
+ * (e.g. SNAP_QUERY='?html-in-canvas' npm test).
  */
 async function loadSnap(page, options = {}) {
-    await page.goto('/snap.html');
+    const query = options.query !== undefined ? options.query :
+        (process.env.SNAP_QUERY || '');
+    await page.goto('/snap.html' + query);
     // note: the IDE is not necessarily world.children[0] - the accessibility
     // layer adds its focus-ring morph to the world before the IDE opens
     await page.waitForFunction(() => {

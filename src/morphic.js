@@ -12552,6 +12552,8 @@ WorldMorph.prototype.initEventListeners = function () {
     canvas.addEventListener(
         "mousedown",
         event => {
+            // HTML-in-Canvas: a native control drawn into me handles this itself
+            if (this.isHTMLEvent && this.isHTMLEvent(event)) {return; }
             event.preventDefault();
             this.keyboardHandler.world = this; // focus the current world
             this.resetKeyboardHandler(true); // keep the handler's value
@@ -12569,13 +12571,17 @@ WorldMorph.prototype.initEventListeners = function () {
 
     canvas.addEventListener(
         "touchstart",
-        event => this.hand.processTouchStart(event),
+        event => {
+            if (this.isHTMLEvent && this.isHTMLEvent(event)) {return; }
+            this.hand.processTouchStart(event);
+        },
         false
     );
 
     canvas.addEventListener(
         "mouseup",
         event => {
+            if (this.isHTMLEvent && this.isHTMLEvent(event)) {return; }
             event.preventDefault();
             this.hand.processMouseUp(event);
         },
@@ -12585,6 +12591,7 @@ WorldMorph.prototype.initEventListeners = function () {
     canvas.addEventListener(
         "dblclick",
         event => {
+            if (this.isHTMLEvent && this.isHTMLEvent(event)) {return; }
             event.preventDefault();
             this.hand.processDoubleClick(event);
         },
@@ -12593,7 +12600,10 @@ WorldMorph.prototype.initEventListeners = function () {
 
     canvas.addEventListener(
         "touchend",
-        event => this.hand.processTouchEnd(event),
+        event => {
+            if (this.isHTMLEvent && this.isHTMLEvent(event)) {return; }
+            this.hand.processTouchEnd(event);
+        },
         false
     );
 
@@ -12611,13 +12621,17 @@ WorldMorph.prototype.initEventListeners = function () {
 
     canvas.addEventListener(
         "contextmenu",
-        event => event.preventDefault(),
+        event => {
+            if (this.isHTMLEvent && this.isHTMLEvent(event)) {return; }
+            event.preventDefault();
+        },
         true // suppress context menu for Mac-Firefox
     );
 
     canvas.addEventListener( // Safari, Chrome
         "mousewheel",
         event => {
+            if (this.isHTMLEvent && this.isHTMLEvent(event)) {return; }
             this.hand.processMouseScroll(event);
             event.preventDefault();
         },

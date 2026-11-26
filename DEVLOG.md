@@ -2,6 +2,23 @@
 
 ## in development:
 
+### 2026-11-26 — HTML-in-Canvas evaluation
+* new docs/HTML-IN-CANVAS.md: what the HTML-in-Canvas API (Chrome 157+)
+  changes for the accessibility work and what Morphic would have to adopt
+* new src/html-canvas.js, an opt-in prototype (snap.html?html-in-canvas,
+  inert without the flag or the API): the parallel DOM moves inside the
+  world canvas; HTMLMorph, a morph whose content is a DOM element painted
+  with drawElementImage(); the cloud credential dialogs as real HTML forms;
+  native DOM text for block labels and input slot contents
+* morphic.js: guarded isHTMLEvent() calls in the canvas listeners so native
+  controls drawn into the canvas receive pointer input; accessibility.js:
+  a11yNativeKey hook so they receive keys
+* widgets.js: the parallel textbox of a password field no longer exposes
+  the password as text
+* tests: specs/90-html-in-canvas.spec.js; SNAP_QUERY runs the whole suite
+  with a query string; tests.html links to the demos
+* sw.js cache version is now 12.3.6-a11y.3
+
 ### 2026-10-26 — sync with main (accessible dialogs)
 * merged main (PR #5: accessible DialogBoxMorph / ListMorph /
   InputFieldMorph, Open / Save Project and Libraries dialogs, focus rings

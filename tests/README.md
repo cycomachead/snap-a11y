@@ -36,6 +36,7 @@ npm run test:headed               # watch the browser
 npx playwright test 50            # one spec file
 npx playwright test --grep @spec  # only the executable-spec tests
 npm run report                    # open the HTML report
+SNAP_QUERY='?html-in-canvas' npm test   # whole suite with HTML-in-Canvas on
 ```
 
 ## How the suite is organized
@@ -53,6 +54,7 @@ npm run report                    # open the HTML report
 | `specs/60-aria-snapshot.spec.js` | mixed | baseline: AX tree is ~empty today; spec: target tree shape |
 | `specs/70-axe.spec.js` | passing | WCAG scan with an explicit known-failures allowlist |
 | `specs/80-execution-log.spec.js` | passing | the Execution Log pane (`src/execution-log.js`): setting, logging, landmark + entries, keyboard/drag re-use, export, persistence |
+| `specs/90-html-in-canvas.spec.js` | passing | the HTML-in-Canvas prototype (`src/html-canvas.js`, opt-in via `?html-in-canvas`): parallel DOM inside the canvas, the Sign in / Sign up dialogs as real forms, DOM text on blocks. Skips itself in browsers without the API |
 
 **Executable specification pattern:** tests tagged `@spec` assert the
 contract in `docs/ACCESSIBILITY.md` §2.1 but are marked `test.fixme()`, so

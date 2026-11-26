@@ -7,7 +7,7 @@ if (self.location.hostname === 'localhost' ||
     // Prevent caching during development
     cacheBuster = Date.now();
 }
-var snapVersion = '12.3.6-a11y.2',
+var snapVersion = '12.3.6-a11y.3',
     cacheName = `snap-pwa-${snapVersion}`,
     filesToCache = [
         'snap.html',
@@ -36,6 +36,7 @@ var snapVersion = '12.3.6-a11y.2',
         'src/cloud.js',
         'src/api.js',
         'src/execution-log.js',
+        'src/html-canvas.js',
         'src/embroider.js',
         'src/sha512.js',
         'src/FileSaver.min.js',

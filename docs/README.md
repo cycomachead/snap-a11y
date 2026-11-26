@@ -42,6 +42,12 @@ The screen-reader / keyboard accessibility roadmap for this fork, and the
 proposal for the hooks Snap! and Morphic should expose so that work can be
 an extension rather than a set of source patches.
 
+### [HTML-IN-CANVAS.md](./HTML-IN-CANVAS.md)
+
+An evaluation of the HTML-in-Canvas API (Chrome 157+) for the accessibility
+work: what it changes, what it doesn't, and an opt-in prototype
+(`snap.html?html-in-canvas`) with two demos.
+
 ---
 
 ### [Migrating.md](./Migrating.md)

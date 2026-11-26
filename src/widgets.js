@@ -89,7 +89,7 @@ IDE_Morph*/
 
 /*jshint esversion: 6*/
 
-modules.widgets = '2026-October-26';
+modules.widgets = '2026-November-26';
 
 var PushButtonMorph;
 var ToggleButtonMorph;
@@ -3713,7 +3713,11 @@ InputFieldMorph.prototype.updateAccessibleElement = function () {
     if (!el) {return; }
     Morph.prototype.updateAccessibleElement.call(this);
     contents = this.contents();
-    el.textContent = contents ? contents.string() : ''; // exposed as the value
+    // exposed as the value - but never a password in the clear
+    el.textContent = !contents ? '' :
+            contents.text && contents.text.isPassword ?
+                '\u2022'.repeat(contents.string().length)
+                    : contents.string();
     if (this.isReadOnly) {
         el.setAttribute('aria-readonly', 'true');
     } else {

@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HTML in the Snap! canvas</title>
+<script src="src/morphic.js"></script>
+<script src="src/symbols.js"></script>
+<script src="src/widgets.js"></script>
+<script src="src/blocks.js"></script>
+<style>
+    * { box-sizing: border-box; }
+    body { margin: 0; color: #182d40; background: #f7f9fb; font: 1rem/1.5 system-ui, sans-serif; }
+    main { max-width: 44rem; padding: 2rem 1.25rem; margin: auto; }
+    h1, h2 { line-height: 1.2; }
+    section { border-top: 1px solid #bac7d0; margin-top: 2rem; }
+    button, input { font: inherit; }
+    button { cursor: pointer; padding: .35rem .85rem; }
+    dialog { padding: 0; border: 1px solid #768897; border-radius: .5rem; }
+    dialog::backdrop { background: #15273888; }
+    form { width: min(20rem, 85vw); padding: 1rem; background: white; }
+    form h2 { margin: 0; }
+    label { display: block; margin: .65rem 0; }
+    label input:not([type=checkbox]) { width: 100%; display: block; }
+    canvas { display: block; }
+    #workspace { position: relative; width: 100%; background: #e5ecf1; border-radius: .5rem; }
+    #workspace canvas { width: 100%; height: 6rem; }
+    #words { width: max-content; padding: 8px 12px; font-weight: bold; color: white; }
+    #words input { width: 7em; max-width: 35vw; border: 0; border-radius: .3rem; padding: .15em .4em; }
+    #workspace > #words { position: absolute; left: 16px; top: 20px; }
+    :focus-visible { outline: 3px solid #d05d00; outline-offset: 1px; }
+</style>
+</head>
+<body>
+<main>
+    <h1>HTML in the Snap! canvas</h1>
+    <p id="mode"></p>
+    <section>
+        <h2>Login dialog</h2>
+        <p>Use sample credentials. Tab through the fields, press Enter to submit locally, or Escape to cancel.</p>
+        <button id="open">Open login dialog</button>
+        <span id="result" role="status"></span>
+        <dialog aria-labelledby="title">
+            <canvas content="drawable"></canvas>
+            <form method="dialog" drawable>
+                <h2 id="title">Sign in</h2>
+                <label>Username <input id="username" autocomplete="username" required autofocus></label>
+                <label>Password <input type="password" autocomplete="current-password" required></label>
+                <label><input type="checkbox"> Stay signed in</label>
+                <button value="submit">Sign in</button>
+                <button value="cancel" formnovalidate>Cancel</button>
+            </form>
+        </dialog>
+    </section>
+    <section>
+        <h2>Text in a command block</h2>
+        <p>Select the label or edit the message. Try mixed-direction text such as “Hello שלום”.</p>
+        <div id="workspace">
+            <canvas content="drawable"></canvas>
+            <div id="words" role="group" aria-label="Say block" drawable>
+                say <input aria-label="Message" value="Hello!" dir="auto">
+            </div>
+        </div>
+    </section>
+</main>
+<script>
+'use strict';
+const dialog = document.querySelector('dialog');
+const form = document.querySelector('form');
+const words = document.querySelector('#words');
+const loginCanvas = dialog.querySelector('canvas');
+const blockCanvas = document.querySelector('#workspace canvas');
+// This page sizes its own backing stores in device pixels.
+for (const canvas of [loginCanvas, blockCanvas]) {
+    if (canvas.isRetinaEnabled) canvas.isRetinaEnabled = false;
+}
+const nativePaint = blockCanvas.content === 'drawable' &&
+    typeof blockCanvas.getContext('2d').drawElementImage === 'function';
+document.querySelector('#mode').textContent = nativePaint ?
+    'Renderer: HTML drawn into the canvas.' :
+    'Renderer: HTML fallback. This browser displays the same controls as ordinary HTML.';
+
+const block = new CommandBlockMorph();
+block.color = new Color(107, 65, 173);
+
+function draw(canvas, element) {
+    const ctx = canvas.getContext('2d');
+    const isBlock = canvas === blockCanvas;
+    const width = isBlock ? canvas.clientWidth : element.offsetWidth;
+    const height = isBlock ? canvas.clientHeight : element.offsetHeight;
+    if (!width || !height) return;
+    const ratio = window.devicePixelRatio;
+    if (canvas.width !== Math.round(width * ratio)) canvas.width = Math.round(width * ratio);
+    if (canvas.height !== Math.round(height * ratio)) canvas.height = Math.round(height * ratio);
+    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    ctx.clearRect(0, 0, width, height);
+    if (isBlock) {
+        ctx.translate(16, 20);
+        block.bounds.setExtent(new Point(element.offsetWidth, element.offsetHeight + block.corner));
+        block.render(ctx);
+    }
+    if (nativePaint) {
+        ctx.drawElementImage(element, 0, 0, element.offsetWidth, element.offsetHeight);
+    }
+}
+
+if (nativePaint) {
+    for (const [canvas, element] of [[loginCanvas, form], [blockCanvas, words]]) {
+        canvas.append(element);
+        canvas.onpaint = () => draw(canvas, element);
+        new ResizeObserver(() => {
+            if (canvas === loginCanvas) {
+                canvas.style.width = form.offsetWidth + 'px';
+                canvas.style.height = form.offsetHeight + 'px';
+            }
+            canvas.requestPaint();
+        }).observe(canvas === loginCanvas ? form : canvas);
+    }
+} else {
+    loginCanvas.remove();
+    blockCanvas.setAttribute('aria-hidden', 'true');
+    const observer = new ResizeObserver(() => draw(blockCanvas, words));
+    observer.observe(blockCanvas);
+    observer.observe(words);
+}
+
+document.querySelector('#open').onclick = () => {
+    dialog.returnValue = '';
+    dialog.showModal();
+    document.querySelector('#username').focus();
+};
+dialog.onclose = () => {
+    document.querySelector('#result').textContent = dialog.returnValue === 'submit' ?
+        'Sample login submitted locally.' : 'Login canceled.';
+    form.reset();
+    document.querySelector('#open').focus();
+};
+</script>
+</body>
+</html>

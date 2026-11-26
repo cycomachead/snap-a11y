@@ -8,6 +8,60 @@ for the IDE. It records what exists today, what remains, the phased plan,
 and the DOM/ARIA contract that the automated tests in `tests/` assert
 against.
 
+## HTML-in-Canvas experiment
+
+Open the [standalone login and block demos](../html-in-canvas-demo.html) in a
+browser. The renderer line identifies the active path. In drawable mode a
+canvas child supplies both the pixels and the accessible controls. The
+ordinary HTML fallback uses the same nodes. The login uses sample data and
+the block exercises text editing independently of script execution.
+
+**Would Morphic still generate a parallel DOM?** Yes, in the sense that a
+running project still needs a semantic representation alongside its morph
+tree. Today `src/accessibility.js` builds an invisible tree and synchronizes
+its bounds and focus with canvas widgets. For a drawable widget, one DOM
+subtree can supply layout, text, hit targets, and accessibility. Giving it
+a second invisible counterpart would expose the same control twice.
+Painted sprites, script structure, and other canvas-only objects still
+need the existing accessibility layer. The browser can expose the words
+“say Hello!” but only Snap! knows where that command sits in a stack and
+what actions are available there.
+
+**Start with login.** In `DialogBoxMorph.promptCredentials`, let the login
+variant own one labeled form. Give its controls native focus, text editing,
+and submit/cancel behavior. On acceptance pass username, password and the
+stay-signed-in choice to the existing callback in
+`IDE_Morph.initializeCloud`. While the form owns focus, the world must let
+its key and pointer events through. Restore focus to the opener and
+dispose of the subtree when the dialog closes. The demo uses a native
+modal dialog around the canvas to exercise focus containment.
+
+**Pilot one block slot next.** The demo sizes a real `CommandBlockMorph`
+outline around an HTML label and input. For integration, create label
+content from the localized block spec in `SyntaxElementMorph.labelPart`.
+Feed its measured size into block layout and commit slot edits through
+the existing slot model so execution and serialization see the same value.
+Keep navigation between commands with `ScriptFocusMorph`. Moving, nesting,
+or deleting a block must update its reading order, clipping and lifetime.
+A field should take keyboard focus for editing without adding a Tab stop
+for every static word in a project.
+
+**Adapt the world renderer selectively.** Register drawable roots on the
+world canvas. Composite each root in morph paint order on that canvas,
+where its drawn transform can also position its hit target. A cached morph
+bitmap alone cannot carry that target. Connect DOM paint invalidation to
+`WorldMorph.updateBroken` and request a canvas paint when a morph moves.
+Account for scroll-frame clipping in both drawing and hit testing. Apply
+device scaling once across the outline and HTML. The demo manages its own
+backing stores and opts its two canvases out of Morphic's Retina scaling.
+
+Chrome documents the 2D API in its [HTML-in-Canvas announcement](https://developer.chrome.com/blog/html-in-canvas).
+The [WICG explainer](https://github.com/WICG/html-in-canvas) specifies
+drawable snapshots, paint timing, and hit-test geometry. Feature-detect the
+API per browser and keep the existing IDE accessibility path available.
+Before adopting either widget, test with screen readers, IME composition,
+and browser zoom in the integrated IDE.
+
 ---
 
 ## 1. Current state (audit)
